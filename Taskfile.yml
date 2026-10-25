@@ -1,0 +1,48 @@
+version: "3"
+
+vars:
+  BIN: bin/proxie
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the proxie binary into bin/
+    cmds:
+      - go build -o {{.BIN}} ./cmd/proxie
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BIN}}"
+
+  run:
+    desc: Run the server (PORT overrides :8080)
+    cmds:
+      - go run ./cmd/proxie
+
+  test:
+    desc: Run all tests (pass a package or flags after --, e.g. task test -- -run TestHello ./internal/server)
+    cmds:
+      - go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format code with golangci-lint
+    cmds:
+      - golangci-lint fmt ./...
+
+  check:
+    desc: Everything CI should run - lint, then test
+    cmds:
+      - task: lint
+      - task: test
