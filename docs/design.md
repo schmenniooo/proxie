@@ -176,18 +176,20 @@ engine. Each source file has exactly one `_test.go` next to it.
 
 ## Milestones
 
-Each milestone is one small PR with its own tests.
+Each milestone is one small PR with its own tests. A checked box means the
+milestone is done in the pull request that is linked or currently open.
 
-1. Config, structured logging, graceful shutdown.
-2. `Store` interface and Redis implementation (timeouts, fail open).
-3. Keygen: canonicalization, key building, header allow-list, ignore list.
-4. Auth: `PROXIE_API_KEY_<TENANT>` loading and key check.
-5. Proxy core: reverse proxy, non-streaming, timeouts, body limit.
-6. Cache layer: hit/miss, TTL, `X-Proxie-Cache`, bypass, 2xx only.
-7. Coalescing for non-streaming requests.
-8. Metrics and health endpoints on the admin port.
-9. Streaming: tee, store after clean end, replay, hang-up handling.
-10. Dockerfile and CI/CD (may move earlier, right after milestone 1).
+- [x] 0. Scaffold: Go module, Gin hello world server, design doc (PR #1)
+- [ ] 1. Config, structured logging, graceful shutdown
+- [ ] 2. `Store` interface and Redis implementation (timeouts, fail open)
+- [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
+- [ ] 4. Auth: `PROXIE_API_KEY_<TENANT>` loading and key check
+- [ ] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
+- [ ] 6. Cache layer: hit/miss, TTL, `X-Proxie-Cache`, bypass, 2xx only
+- [ ] 7. Coalescing for non-streaming requests
+- [ ] 8. Metrics and health endpoints on the admin port
+- [ ] 9. Streaming: tee, store after clean end, replay, hang-up handling
+- [ ] 10. Dockerfile and CI/CD (may move earlier, right after milestone 1)
 
 ## Open items
 
