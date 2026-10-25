@@ -9,12 +9,20 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHello(t *testing.T) {
+func TestHelloRouteIsRegistered(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
 
 	server.New().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.JSONEq(t, `{"message":"Hello, World!"}`, w.Body.String())
+}
+
+func TestHelloRouteRejectsPost(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/hello", nil)
+
+	server.New().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

@@ -155,7 +155,7 @@ proposal and may be adjusted while building.
 
 ```
 cmd/proxie/        main.go, starts the server
-internal/server/   engine setup (server.go) and routes (routes.go)
+internal/server/   engine setup (server.go), routes (routes.go), handlers (handlers.go)
 internal/config/   env config struct
 internal/store/    Store interface and Redis implementation
 internal/keygen/   canonicalization and cache key building
@@ -164,8 +164,9 @@ internal/proxy/    reverse proxy to the upstream
 internal/auth/     proxie key check and tenant lookup
 ```
 
-Routes are the starting point of business logic. `server.go` only builds the
-engine. Each source file has exactly one `_test.go` next to it.
+Handlers are the starting point of business logic. `server.go` only builds the
+engine and `routes.go` only maps endpoints to handlers. Each source file has
+exactly one `_test.go` next to it.
 
 ## Delivery
 

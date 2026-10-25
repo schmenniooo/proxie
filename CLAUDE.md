@@ -21,7 +21,7 @@ No linter is configured yet (`golangci-lint` is not installed).
 ## Conventions
 
 - Entrypoint is `cmd/proxie/main.go`. Packages live under `internal/`.
-- `internal/server/server.go` only builds the Gin engine (middleware, then `registerRoutes`). Routes and handlers live in `routes.go`, which is the starting point of business logic.
+- `internal/server/server.go` only builds the Gin engine (middleware, then `registerRoutes`). Routes are registered in `routes.go`; handlers live in `handlers.go`, which is the starting point of business logic.
 - Exactly one `_test.go` per source file, next to it (`foo.go` -> `foo_test.go`). Tests use the external `_test` package and go through exported APIs (e.g. `server.New().ServeHTTP`). Do not add separate white box test files.
 - Tests use `testify` (`assert`).
 
