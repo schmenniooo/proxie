@@ -11,7 +11,7 @@ import (
 
 func TestUnknownRouteReturns404(t *testing.T) {
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nope", nil)
 
 	server.New().ServeHTTP(w, req)
 

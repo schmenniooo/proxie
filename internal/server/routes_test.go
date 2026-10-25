@@ -11,7 +11,7 @@ import (
 
 func TestHelloRouteIsRegistered(t *testing.T) {
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/hello", nil)
 
 	server.New().ServeHTTP(w, req)
 
@@ -20,7 +20,7 @@ func TestHelloRouteIsRegistered(t *testing.T) {
 
 func TestHelloRouteRejectsPost(t *testing.T) {
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/hello", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/hello", nil)
 
 	server.New().ServeHTTP(w, req)
 

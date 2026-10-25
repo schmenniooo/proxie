@@ -8,22 +8,25 @@ proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches L
 
 ## Commands
 
-```
-go build ./cmd/proxie
-go run ./cmd/proxie                          # listens on :8080 (PORT overrides)
-go vet ./...
-go test ./...
-go test ./internal/server -run TestHello     # single test
-```
+Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go toolchain directly. Install with `brew install go-task golangci-lint`.
 
-No linter is configured yet (`golangci-lint` is not installed).
+```
+task                                          # list tasks
+task build                                    # bin/proxie
+task run                                      # listens on :8080 (PORT overrides)
+task test                                     # go test ./...
+task test -- -run TestHello ./internal/server # single test
+task lint                                     # golangci-lint (config: .golangci.yml)
+task fmt                                      # gofmt + goimports via golangci-lint
+task check                                    # lint, then test
+```
 
 ## Conventions
 
 - Entrypoint is `cmd/proxie/main.go`. Packages live under `internal/`.
 - `internal/server/server.go` only builds the Gin engine (middleware, then `registerRoutes`). Routes are registered in `routes.go`; handlers live in `handlers.go`, which is the starting point of business logic.
 - Exactly one `_test.go` per source file, next to it (`foo.go` -> `foo_test.go`). Tests use the external `_test` package and go through exported APIs (e.g. `server.New().ServeHTTP`). Do not add separate white box test files.
-- Tests use `testify` (`assert`).
+- Tests use `testify` (`assert`). Build requests with `httptest.NewRequestWithContext(t.Context(), ...)`; the `noctx` linter rejects `httptest.NewRequest`.
 
 ## Workflow
 
