@@ -1,0 +1,38 @@
+name: dependabot
+
+# pull_request_target so the Linear secret is available to Dependabot PRs.
+# Safe because this workflow never checks out or runs the PR's code.
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  linear:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Linear issue
+        env:
+          LINEAR_API_TOKEN: ${{ secrets.LINEAR_API_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          TEAM_ID: b12df6f6-ec4d-4efb-8807-0f1b1e873d1c
+          PROJECT_ID: 81487d88-729d-477e-aabe-d01678225342
+        run: |
+          payload=$(jq -n \
+            --arg title "Review Dependabot PR: $PR_TITLE" \
+            --arg description "Dependabot opened $PR_URL" \
+            --arg teamId "$TEAM_ID" \
+            --arg projectId "$PROJECT_ID" \
+            '{
+              query: "mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { identifier url } } }",
+              variables: { input: { teamId: $teamId, projectId: $projectId, title: $title, description: $description } }
+            }')
+          response=$(curl -sS --fail-with-body https://api.linear.app/graphql \
+            -H "Content-Type: application/json" \
+            -H "Authorization: $LINEAR_API_TOKEN" \
+            -d "$payload")
+          echo "$response" | jq -e '.data.issueCreate.success == true' > /dev/null
+          echo "$response" | jq -r '.data.issueCreate.issue.url'
