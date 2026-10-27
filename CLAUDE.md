@@ -32,7 +32,8 @@ task check                                    # lint, then test
 
 - Never commit to `main` directly; use a branch and a PR (open as draft, assigned to the user). The one exception was an explicit user request.
 - Worktrees go under `.claude/worktrees/` inside the main checkout (`.claude/` is excluded via `.git/info/exclude`).
-- Project management is in Linear, project "Proxie", key `PRO`. Every PR title starts with the key and the zero-padded milestone number: `PRO-000: ...` for the scaffold, `PRO-001: ...` for milestone 1, and so on.
+- Project management is in Linear, project "Proxie". For now PR titles use the `SMI` prefix (the Linear team is called SmithLabs, so its issues are `SMI-<n>`), e.g. `SMI-16: Dockerfile and CI/CD`. Earlier PRs used `PRO-<zero-padded milestone>` (`PRO-000` for the scaffold); that scheme is paused.
+- Never put the ticket key (`SMI-<n>`, `PRO-<n>`) in commit messages. It belongs in the PR title only.
 - Never put test steps or a test plan in a PR description.
 - Each milestone in `docs/design.md` is one small PR. Tick its checkbox in the design doc (and the PR description) in the PR that completes it.
 - Co-author trailer on commits and the generated-with line on PR bodies, as given by the session attribution reminder.

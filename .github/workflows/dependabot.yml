@@ -1,0 +1,28 @@
+name: dependabot
+
+# pull_request_target so the Linear secret is available to Dependabot PRs.
+# Safe because the checkout is the base branch (the default for this trigger),
+# never the PR's code.
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  linear:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Create Linear issue
+        env:
+          LINEAR_API_TOKEN: ${{ secrets.LINEAR_API_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          TEAM_ID: b12df6f6-ec4d-4efb-8807-0f1b1e873d1c
+          PROJECT_ID: 81487d88-729d-477e-aabe-d01678225342
+        run: python3 .github/scripts/linear_issue.py

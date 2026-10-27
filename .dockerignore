@@ -1,0 +1,6 @@
+.git
+.claude
+.task
+bin
+docs
+*.md
