@@ -190,7 +190,7 @@ milestone is done in the pull request that is linked or currently open.
 - [ ] 7. Coalescing for non-streaming requests
 - [ ] 8. Metrics and health endpoints on the admin port
 - [ ] 9. Streaming: tee, store after clean end, replay, hang-up handling
-- [ ] 10. Dockerfile and CI/CD (may move earlier, right after milestone 1)
+- [x] 10. Dockerfile and CI/CD (may move earlier, right after milestone 1)
 
 ## Open items
 
