@@ -1,6 +1,7 @@
 name: release
 
-# Run manually: create the tag, then run this workflow on that tag.
+# Run manually: create the tag (1.2.3), then run this workflow on that tag.
+# It publishes the image and creates the GitHub release named v1.2.3.
 on:
   workflow_dispatch:
 
@@ -8,16 +9,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
-      - name: Require tag v<semver>
+      - name: Require tag <semver>
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "$REF_TYPE" != "tag" ] || ! printf '%s' "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Run this workflow on a tag named v<major>.<minor>.<patch>, got $REF_TYPE '$REF_NAME'" >&2
+          if [ "$REF_TYPE" != "tag" ] || ! printf '%s' "$REF_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Run this workflow on a tag named <major>.<minor>.<patch>, got $REF_TYPE '$REF_NAME'" >&2
             exit 1
           fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -45,3 +46,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --title "v$TAG" --generate-notes
