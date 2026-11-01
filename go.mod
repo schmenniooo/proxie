@@ -5,6 +5,7 @@ go 1.27.2
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/stretchr/testify v1.12.1
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

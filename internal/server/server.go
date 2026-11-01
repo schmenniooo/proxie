@@ -1,12 +1,16 @@
 // Package server wires up the HTTP server.
 package server
 
-import "github.com/gin-gonic/gin"
+import (
+	"log/slog"
+
+	"github.com/gin-gonic/gin"
+)
 
 // New returns a Gin engine with middleware and all routes registered.
-func New() *gin.Engine {
+func New(logger *slog.Logger) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(accessLog(logger), recovery(logger))
 	registerRoutes(r)
 	return r
 }

@@ -4,16 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently only a hello world `GET /hello` exists.
+proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown and a hello world `GET /hello` exist.
 
 ## Commands
 
-Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go toolchain directly. Install with `brew install go-task golangci-lint`.
+Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go toolchain directly. Every task runs in Docker via `compose.yaml` (Go and golangci-lint images pinned to the Dockerfile and CI versions), so the host only needs Docker and Task (`brew install go-task`).
 
 ```
 task                                          # list tasks
-task build                                    # bin/proxie
-task run                                      # listens on :8080 (PORT overrides)
+task build                                    # proxie Docker image
+task run                                      # proxie + Redis via compose, env from .env (copy .env.example)
+task down                                     # stop the compose containers
 task test                                     # go test ./...
 task test -- -run TestHello ./internal/server # single test
 task lint                                     # golangci-lint (config: .golangci.yml)
@@ -24,7 +25,8 @@ task check                                    # lint, then test
 ## Conventions
 
 - Entrypoint is `cmd/proxie/main.go`. Packages live under `internal/`.
-- `internal/server/server.go` only builds the Gin engine (middleware, then `registerRoutes`). Routes are registered in `routes.go`; handlers live in `handlers.go`, which is the starting point of business logic.
+- `internal/server/server.go` only builds the Gin engine (middleware, then `registerRoutes`). Routes are registered in `routes.go`; handlers live in `handlers.go`, which is the starting point of business logic. Middleware is in `middleware.go`, serving and graceful shutdown in `run.go`.
+- Config comes only from env vars via `internal/config` (see `docs/design.md`). Log with the injected `*slog.Logger`; never log prompts, bodies, headers, query strings or keys.
 - Exactly one `_test.go` per source file, next to it (`foo.go` -> `foo_test.go`). Tests use the external `_test` package and go through exported APIs (e.g. `server.New().ServeHTTP`). Do not add separate white box test files.
 - Tests use `testify` (`assert`). Build requests with `httptest.NewRequestWithContext(t.Context(), ...)`; the `noctx` linter rejects `httptest.NewRequest`.
 

@@ -131,21 +131,47 @@ proposal and may be adjusted while building.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `PROXIE_UPSTREAM_URL` | Base URL requests are forwarded to | required |
+| `PROXIE_UPSTREAM_URL` | Base URL requests are forwarded to (`http`/`https`) | required |
 | `PROXIE_API_KEY_<TENANT>` | Proxie key(s) of a tenant | at least one required |
 | `PROXIE_REDIS_URL` | Redis URL (`rediss://` for TLS) | required |
 | `PROXIE_REDIS_PASSWORD` | Redis password | empty |
 | `PROXIE_CACHE_TTL` | Entry lifetime | `1h` |
 | `PROXIE_IGNORE_FIELDS` | Body fields excluded from the hash | empty |
-| `PROXIE_KEY_HEADERS` | Header allow-list for the hash | see cache key |
+| `PROXIE_KEY_HEADERS` | Header allow-list for the hash. Unset uses the default, set but empty means no headers | `content-type,anthropic-version,anthropic-beta` |
 | `PROXIE_MAX_REQUEST_BYTES` | Max request body | `10485760` |
-| `PROXIE_MAX_ENTRY_BYTES` | Max stored response | to decide |
+| `PROXIE_MAX_ENTRY_BYTES` | Max stored response | `10485760` |
 | `PROXIE_ADDR` | Proxy listen address | `:8080` |
 | `PROXIE_ADMIN_ADDR` | Admin listen address (`/healthz`, `/metrics`) | `:9090` |
+| `PROXIE_UPSTREAM_TIMEOUT` | Upstream, non-streaming, total | `120s` |
+| `PROXIE_STREAM_FIRST_BYTE_TIMEOUT` | Upstream, streaming, time to first piece | `30s` |
+| `PROXIE_STREAM_IDLE_TIMEOUT` | Upstream, streaming, max silence between pieces | `30s` |
+| `PROXIE_REDIS_TIMEOUT` | Redis operation | `200ms` |
+| `PROXIE_SHUTDOWN_TIMEOUT` | Time in-flight requests get to finish on SIGINT/SIGTERM | `25s` |
+| `PROXIE_LOG_LEVEL` | `debug`, `info`, `warn` or `error` | `info` |
+| `PROXIE_LOG_FORMAT` | `json` or `text` | `json` |
+| `PROXIE_LOG_FILE` | Optional log file, written in addition to stdout | empty |
+| `PROXIE_LOG_FILE_MAX_MB` | Rotate the log file at this size | `100` |
+| `PROXIE_LOG_FILE_MAX_BACKUPS` | Rotated log files to keep (`0` keeps all) | `5` |
+| `PROXIE_LOG_FILE_MAX_AGE_DAYS` | Delete rotated log files older than this (`0` keeps them) | `14` |
+
+Startup fails and lists every missing or invalid variable at once.
+
+## Shutdown
+
+On SIGINT or SIGTERM proxie stops accepting connections and gives in-flight
+requests up to `PROXIE_SHUTDOWN_TIMEOUT` to finish, then closes the rest. The
+default of 25s fits inside the 30s grace period of Kubernetes and ECS. A
+second signal stops the process at once.
 
 ## Observability
 
-- Structured logging with `log/slog`. Prompts, bodies and keys are never logged.
+- Structured logging with `log/slog`, JSON by default. Prompts, bodies,
+  headers, query strings and keys are never logged. The access log records
+  method, path, status, latency and size.
+- Logs always go to stdout (containers, `awslogs`, `kubectl logs`). With
+  `PROXIE_LOG_FILE` set they also go to a file that proxie rotates by size
+  itself, for VMs where an agent (for example the CloudWatch agent) tails it.
+  Rotation renames the file, which tailing agents handle reliably.
 - Prometheus metrics on the admin port, scrapable by Grafana or CloudWatch.
   Metrics carry a `tenant` label (hits, misses, bypasses, errors, latency).
   Many tenants would inflate label cardinality.
@@ -155,8 +181,10 @@ proposal and may be adjusted while building.
 
 ```
 cmd/proxie/        main.go, starts the server
-internal/server/   engine setup (server.go), routes (routes.go), handlers (handlers.go)
+internal/server/   engine setup (server.go), routes (routes.go), handlers (handlers.go),
+                   middleware (middleware.go), serve and shutdown (run.go)
 internal/config/   env config struct
+internal/logging/  slog setup, stdout plus optional rotated file
 internal/store/    Store interface and Redis implementation
 internal/keygen/   canonicalization and cache key building
 internal/cache/    hit/miss flow, coalescing
@@ -170,7 +198,8 @@ exactly one `_test.go` next to it.
 
 ## Delivery
 
-- Multi-stage Dockerfile.
+- Multi-stage Dockerfile. Docker Compose (`compose.yaml`) runs tests, lint and a
+  local proxie with Redis, so development needs only Docker and Task.
 - GitHub Actions: tests on pull requests. On a version tag created from `main`
   the image is built and pushed to the GitHub container registry (ghcr.io).
 - Work happens on branches and pull requests.
@@ -181,7 +210,7 @@ Each milestone is one small PR with its own tests. A checked box means the
 milestone is done in the pull request that is linked or currently open.
 
 - [x] 0. Scaffold: Go module, Gin hello world server, design doc (PR #1)
-- [ ] 1. Config, structured logging, graceful shutdown
+- [x] 1. Config, structured logging, graceful shutdown
 - [ ] 2. `Store` interface and Redis implementation (timeouts, fail open)
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
 - [ ] 4. Auth: `PROXIE_API_KEY_<TENANT>` loading and key check
@@ -194,7 +223,6 @@ milestone is done in the pull request that is linked or currently open.
 
 ## Open items
 
-- Value of `PROXIE_MAX_ENTRY_BYTES`.
 - Per-tenant rate limiting (noisy neighbor).
 - Redis lock to coalesce across replicas.
 - Opt-in to finish abandoned streams.
