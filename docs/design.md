@@ -198,7 +198,8 @@ exactly one `_test.go` next to it.
 
 ## Delivery
 
-- Multi-stage Dockerfile.
+- Multi-stage Dockerfile. Docker Compose (`compose.yaml`) runs tests, lint and a
+  local proxie with Redis, so development needs only Docker and Task.
 - GitHub Actions: tests on pull requests. On a version tag created from `main`
   the image is built and pushed to the GitHub container registry (ghcr.io).
 - Work happens on branches and pull requests.

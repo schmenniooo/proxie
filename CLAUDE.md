@@ -8,12 +8,13 @@ proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches L
 
 ## Commands
 
-Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go toolchain directly. Install with `brew install go-task golangci-lint`.
+Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go toolchain directly. Every task runs in Docker via `compose.yaml` (Go and golangci-lint images pinned to the Dockerfile and CI versions), so the host only needs Docker and Task (`brew install go-task`).
 
 ```
 task                                          # list tasks
-task build                                    # bin/proxie
-task run                                      # loads .env (copy .env.example), listens on PROXIE_ADDR
+task build                                    # proxie Docker image
+task run                                      # proxie + Redis via compose, env from .env (copy .env.example)
+task down                                     # stop the compose containers
 task test                                     # go test ./...
 task test -- -run TestHello ./internal/server # single test
 task lint                                     # golangci-lint (config: .golangci.yml)

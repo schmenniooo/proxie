@@ -1,7 +1,11 @@
 version: "3"
 
+# Everything runs in Docker (see compose.yaml); only Docker and Task are
+# needed on the host.
+
 vars:
-  BIN: bin/proxie
+  GO: COMPOSE_PROGRESS=quiet docker compose run --rm go
+  LINT: COMPOSE_PROGRESS=quiet docker compose run --rm lint
 
 tasks:
   default:
@@ -11,36 +15,34 @@ tasks:
     silent: true
 
   build:
-    desc: Build the proxie binary into bin/
+    desc: Build the proxie Docker image
     cmds:
-      - go build -o {{.BIN}} ./cmd/proxie
-    sources:
-      - ./**/*.go
-      - go.mod
-      - go.sum
-    generates:
-      - "{{.BIN}}"
+      - docker compose build proxie
 
   run:
-    desc: Run the server with env vars from .env (copy .env.example)
-    dotenv: [".env"]
+    desc: Run proxie and Redis (env vars from .env, copy .env.example)
     cmds:
-      - go run ./cmd/proxie
+      - docker compose up --build proxie
+
+  down:
+    desc: Stop and remove the proxie and Redis containers
+    cmds:
+      - docker compose down
 
   test:
     desc: Run all tests (pass a package or flags after --, e.g. task test -- -run TestHello ./internal/server)
     cmds:
-      - go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+      - "{{.GO}} go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}"
 
   lint:
     desc: Run golangci-lint
     cmds:
-      - golangci-lint run ./...
+      - "{{.LINT}} golangci-lint run ./..."
 
   fmt:
     desc: Format code with golangci-lint
     cmds:
-      - golangci-lint fmt ./...
+      - "{{.LINT}} golangci-lint fmt ./..."
 
   check:
     desc: Everything CI should run - lint, then test

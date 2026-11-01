@@ -1,0 +1,50 @@
+# Local development. Use the Taskfile (`task test`, `task lint`, `task run`)
+# instead of calling compose directly.
+
+name: proxie
+
+x-go-tool: &go-tool
+  working_dir: /src
+  volumes:
+    - .:/src
+    - go-mod:/go/pkg/mod
+    - go-cache:/root/.cache
+  profiles: [tools]
+
+services:
+  # Runs go commands (tests) with the same Go version as the Dockerfile.
+  go:
+    <<: *go-tool
+    image: golang:1.27.3
+
+  # Same golangci-lint version as CI.
+  lint:
+    <<: *go-tool
+    image: golangci/golangci-lint:v2.15.0
+
+  redis:
+    image: redis:8.0-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  proxie:
+    build: .
+    ports:
+      - "${PROXIE_PORT:-8080}:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PROXIE_UPSTREAM_URL: ${PROXIE_UPSTREAM_URL:-https://api.anthropic.com}
+      PROXIE_REDIS_URL: redis://redis:6379
+      PROXIE_ADDR: ":8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  go-mod:
+  go-cache:
