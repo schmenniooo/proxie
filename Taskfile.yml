@@ -22,7 +22,8 @@ tasks:
       - "{{.BIN}}"
 
   run:
-    desc: Run the server (PORT overrides :8080)
+    desc: Run the server with env vars from .env (copy .env.example)
+    dotenv: [".env"]
     cmds:
       - go run ./cmd/proxie
 
