@@ -13,3 +13,9 @@ const greeting = "Hello, World!"
 func helloHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": greeting})
 }
+
+// notFoundHandler answers unknown routes. Gin's built-in 404 is written after
+// the middleware chain, so the access log would miss its bytes.
+func notFoundHandler(c *gin.Context) {
+	c.String(http.StatusNotFound, "404 page not found")
+}

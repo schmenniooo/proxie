@@ -47,6 +47,20 @@ func TestAccessLogLevelFollowsStatus(t *testing.T) {
 	assert.Contains(t, buf.String(), `"level":"WARN"`)
 }
 
+func TestAccessLogCountsNotFoundBytes(t *testing.T) {
+	logger, buf := bufferLogger()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/hello", nil)
+
+	server.New(logger).ServeHTTP(w, req)
+
+	var line map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &line))
+	assert.InDelta(t, http.StatusNotFound, line["status"], 0)
+	assert.InDelta(t, w.Body.Len(), line["bytes"], 0)
+	assert.Positive(t, w.Body.Len())
+}
+
 func TestAccessLogOmitsQueryAndHeaders(t *testing.T) {
 	logger, buf := bufferLogger()
 	w := httptest.NewRecorder()
