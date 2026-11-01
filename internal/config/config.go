@@ -57,8 +57,8 @@ type Log struct {
 // LogValue renders the config for logging with secrets masked.
 func (c Config) LogValue() slog.Value {
 	return slog.GroupValue(
-		slog.String("upstream_url", c.UpstreamURL.String()),
-		slog.String("redis_url", c.RedisURL.Redacted()),
+		slog.String("upstream_url", redactURL(c.UpstreamURL)),
+		slog.String("redis_url", redactURL(c.RedisURL)),
 		slog.Bool("redis_password_set", c.RedisPassword != ""),
 		slog.String("cache_ttl", c.CacheTTL.String()),
 		slog.Any("ignore_fields", c.IgnoreFields),
@@ -76,6 +76,15 @@ func (c Config) LogValue() slog.Value {
 		slog.String("log_format", c.Log.Format),
 		slog.String("log_file", c.Log.File),
 	)
+}
+
+// redactURL masks the password and drops the query and fragment, which can
+// carry credentials (for example ?key=).
+func redactURL(u *url.URL) string {
+	safe := *u
+	safe.RawQuery = ""
+	safe.Fragment = ""
+	return safe.Redacted()
 }
 
 // Load reads the configuration through lookup, which is normally

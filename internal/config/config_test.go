@@ -204,6 +204,7 @@ func TestConfigLogValueMasksSecrets(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := config.Load(env(map[string]string{
+		"PROXIE_UPSTREAM_URL":   "https://user:upstreamsecret@api.example.com/v1?key=querysecret",
 		"PROXIE_REDIS_URL":      "redis://user:urlsecret@cache:6379",
 		"PROXIE_REDIS_PASSWORD": "envsecret",
 	}))
@@ -212,8 +213,10 @@ func TestConfigLogValueMasksSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	slog.New(slog.NewJSONHandler(&buf, nil)).Info("config", "config", cfg)
 
-	assert.NotContains(t, buf.String(), "urlsecret")
-	assert.NotContains(t, buf.String(), "envsecret")
+	for _, secret := range []string{"upstreamsecret", "querysecret", "urlsecret", "envsecret"} {
+		assert.NotContains(t, buf.String(), secret)
+	}
+	assert.Contains(t, buf.String(), "api.example.com/v1")
 	assert.Contains(t, buf.String(), `"redis_password_set":true`)
 	assert.Contains(t, buf.String(), "cache:6379")
 }
