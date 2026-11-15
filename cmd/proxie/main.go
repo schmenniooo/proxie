@@ -14,6 +14,7 @@ import (
 	"github.com/schmenniooo/proxie/internal/config"
 	"github.com/schmenniooo/proxie/internal/logging"
 	"github.com/schmenniooo/proxie/internal/server"
+	"github.com/schmenniooo/proxie/internal/store"
 )
 
 func main() {
@@ -46,6 +47,22 @@ func run(ctx context.Context) int {
 	gin.SetMode(gin.ReleaseMode)
 
 	logger.Info("starting proxie", slog.Any("config", cfg))
+
+	st, err := store.NewRedis(store.RedisOptions{
+		URL:      cfg.RedisURL,
+		Password: cfg.RedisPassword,
+		Timeout:  cfg.RedisTimeout,
+	})
+	if err != nil {
+		logger.Error("redis setup failed", slog.Any("error", err))
+		return 1
+	}
+	defer func() { _ = st.Close() }()
+	// Fail open: an unreachable Redis only means requests go uncached.
+	if err := st.Ping(ctx); err != nil {
+		logger.Warn("redis unreachable, requests will not be cached until it is back", slog.Any("error", err))
+	}
+
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		logger.Error("listen failed", slog.String("addr", cfg.Addr), slog.Any("error", err))

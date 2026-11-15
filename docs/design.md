@@ -94,14 +94,18 @@ never share an entry.
   `X-Proxie-Cache: bypass`.
 - Every response carries `X-Proxie-Cache: HIT|MISS|BYPASS`.
 - Default TTL is 1 hour. Redis expires entries on its own. Eviction is left to
-  Redis (`maxmemory-policy allkeys-lru`). There is no purge endpoint in v1.
+  Redis (`maxmemory-policy allkeys-lru`). proxie does not change the Redis
+  configuration itself (managed Redis often forbids `CONFIG SET`), so the
+  operator sets `maxmemory` and the policy. There is no purge endpoint in v1.
 - The upstream is asked for uncompressed responses (`Accept-Encoding:
   identity`) so stored bytes are readable by every caller.
 
 ## Failure behavior
 
 - Redis down or slow: fail open. The request is forwarded to the upstream
-  uncached. Redis calls use a short timeout (200ms by default).
+  uncached. Redis calls use a short timeout (200ms by default) and are not
+  retried. An unreachable Redis at startup is logged as a warning; proxie
+  starts anyway and connects once Redis is back.
 - If proxie itself is down, the fallback to the upstream has to live in the
   caller or the infrastructure (client retry, load balancer). A service that is
   down cannot forward anything.
@@ -231,7 +235,7 @@ milestone is done in the pull request that is linked or currently open.
 
 - [x] 0. Scaffold: Go module, Gin hello world server, design doc (PR #1)
 - [x] 1. Config, structured logging, graceful shutdown
-- [ ] 2. `Store` interface and Redis implementation (timeouts, fail open)
+- [x] 2. `Store` interface and Redis implementation (timeouts, fail open)
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
 - [ ] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
   and `PROXIE_UPSTREAM_URL_<TENANT>` is done in config)
