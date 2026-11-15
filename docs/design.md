@@ -209,9 +209,8 @@ internal/server/   engine setup (server.go), routes (routes.go), handlers (handl
                    middleware (middleware.go), serve and shutdown (run.go)
 internal/config/   env config struct
 internal/logging/  slog setup, stdout plus optional rotated file
-internal/store/    Store interface and Redis implementation
 internal/keygen/   canonicalization and cache key building
-internal/cache/    hit/miss flow, coalescing
+internal/cache/    Cache interface and Redis implementation, hit/miss flow, coalescing
 internal/proxy/    reverse proxy to the tenant's upstream
 internal/auth/     proxie key check and tenant lookup (tenants are loaded in config)
 ```
@@ -235,7 +234,7 @@ milestone is done in the pull request that is linked or currently open.
 
 - [x] 0. Scaffold: Go module, Gin hello world server, design doc (PR #1)
 - [x] 1. Config, structured logging, graceful shutdown
-- [x] 2. `Store` interface and Redis implementation (timeouts, fail open)
+- [x] 2. `Cache` interface and Redis implementation (timeouts, fail open)
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
 - [ ] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
   and `PROXIE_UPSTREAM_URL_<TENANT>` is done in config)

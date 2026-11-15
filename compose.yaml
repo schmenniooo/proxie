@@ -17,7 +17,7 @@ services:
     <<: *go-tool
     image: golang:1.27.3
     environment:
-      # Lets the store tests also run against a real Redis.
+      # Lets the cache tests also run against a real Redis.
       PROXIE_TEST_REDIS_URL: redis://redis:6379/15
     depends_on:
       redis:

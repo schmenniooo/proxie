@@ -1,4 +1,4 @@
-package store
+package cache
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisOptions configures a Redis store.
+// RedisOptions configures a Redis cache.
 type RedisOptions struct {
 	// URL is a redis:// or rediss:// (TLS) URL.
 	URL *url.URL
@@ -20,16 +20,16 @@ type RedisOptions struct {
 	Timeout time.Duration
 }
 
-// Redis is a Store backed by Redis. Eviction is left to Redis, which should
+// Redis is a Cache backed by Redis. Eviction is left to Redis, which should
 // run with maxmemory-policy allkeys-lru.
 type Redis struct {
 	client  *redis.Client
 	timeout time.Duration
 }
 
-var _ Store = (*Redis)(nil)
+var _ Cache = (*Redis)(nil)
 
-// NewRedis creates a Redis store. It does not connect; connections are
+// NewRedis creates a Redis cache. It does not connect; connections are
 // opened lazily, so an unreachable Redis does not stop proxie from starting.
 func NewRedis(opts RedisOptions) (*Redis, error) {
 	if opts.URL == nil {
@@ -55,7 +55,6 @@ func NewRedis(opts RedisOptions) (*Redis, error) {
 	return &Redis{client: redis.NewClient(o), timeout: opts.Timeout}, nil
 }
 
-// Get implements Store.
 func (r *Redis) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
@@ -69,7 +68,6 @@ func (r *Redis) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	return val, true, nil
 }
 
-// Set implements Store.
 func (r *Redis) Set(ctx context.Context, key string, val []byte, ttl time.Duration) error {
 	if ttl <= 0 {
 		return errors.New("redis set: ttl must be positive")
@@ -82,7 +80,6 @@ func (r *Redis) Set(ctx context.Context, key string, val []byte, ttl time.Durati
 	return nil
 }
 
-// Ping implements Store.
 func (r *Redis) Ping(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
@@ -92,7 +89,6 @@ func (r *Redis) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Close implements Store.
 func (r *Redis) Close() error {
 	return r.client.Close()
 }

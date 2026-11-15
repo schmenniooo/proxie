@@ -1,4 +1,4 @@
-package store_test
+package cache_test
 
 import (
 	"net/url"
@@ -6,16 +6,16 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/schmenniooo/proxie/internal/store"
+	"github.com/schmenniooo/proxie/internal/cache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// newMiniredis returns a Store backed by an in-process Redis.
-func newMiniredis(t *testing.T) (store.Store, *miniredis.Miniredis) {
+// newMiniredis returns a Cache backed by an in-process Redis.
+func newMiniredis(t *testing.T) (cache.Cache, *miniredis.Miniredis) {
 	t.Helper()
 	mr := miniredis.RunT(t)
-	s, err := store.NewRedis(store.RedisOptions{
+	s, err := cache.NewRedis(cache.RedisOptions{
 		URL:     &url.URL{Scheme: "redis", Host: mr.Addr()},
 		Timeout: time.Second,
 	})
@@ -24,7 +24,7 @@ func newMiniredis(t *testing.T) (store.Store, *miniredis.Miniredis) {
 	return s, mr
 }
 
-func TestStoreContract(t *testing.T) {
+func TestCacheContract(t *testing.T) {
 	s, _ := newMiniredis(t)
 	ctx := t.Context()
 

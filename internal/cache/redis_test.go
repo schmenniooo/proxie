@@ -1,4 +1,4 @@
-package store_test
+package cache_test
 
 import (
 	"context"
@@ -11,19 +11,19 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/schmenniooo/proxie/internal/store"
+	"github.com/schmenniooo/proxie/internal/cache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const shortTimeout = 100 * time.Millisecond
 
-func newRedis(t *testing.T, opts store.RedisOptions) *store.Redis {
+func newRedis(t *testing.T, opts cache.RedisOptions) *cache.Redis {
 	t.Helper()
 	if opts.Timeout == 0 {
 		opts.Timeout = time.Second
 	}
-	s, err := store.NewRedis(opts)
+	s, err := cache.NewRedis(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
@@ -39,22 +39,22 @@ func redisURL(t *testing.T, raw string) *url.URL {
 func TestNewRedisValidation(t *testing.T) {
 	tests := []struct {
 		name string
-		opts store.RedisOptions
+		opts cache.RedisOptions
 	}{
-		{"missing URL", store.RedisOptions{Timeout: time.Second}},
-		{"zero timeout", store.RedisOptions{URL: &url.URL{Scheme: "redis", Host: "localhost:6379"}}},
-		{"unsupported scheme", store.RedisOptions{URL: &url.URL{Scheme: "http", Host: "localhost:6379"}, Timeout: time.Second}},
+		{"missing URL", cache.RedisOptions{Timeout: time.Second}},
+		{"zero timeout", cache.RedisOptions{URL: &url.URL{Scheme: "redis", Host: "localhost:6379"}}},
+		{"unsupported scheme", cache.RedisOptions{URL: &url.URL{Scheme: "http", Host: "localhost:6379"}, Timeout: time.Second}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := store.NewRedis(tt.opts)
+			_, err := cache.NewRedis(tt.opts)
 			require.Error(t, err)
 		})
 	}
 }
 
 func TestNewRedisErrorHidesPassword(t *testing.T) {
-	_, err := store.NewRedis(store.RedisOptions{
+	_, err := cache.NewRedis(cache.RedisOptions{
 		URL:     redisURL(t, "redis://:hunter2@localhost:6379/notadb"),
 		Timeout: time.Second,
 	})
@@ -64,12 +64,12 @@ func TestNewRedisErrorHidesPassword(t *testing.T) {
 
 func TestNewRedisTLSDoesNotConnect(t *testing.T) {
 	// rediss:// is accepted and, like redis://, connects lazily.
-	newRedis(t, store.RedisOptions{URL: redisURL(t, "rediss://user:pw@redis.example.com:6380/0")})
+	newRedis(t, cache.RedisOptions{URL: redisURL(t, "rediss://user:pw@redis.example.com:6380/0")})
 }
 
 func TestRedisTTL(t *testing.T) {
 	mr := miniredis.RunT(t)
-	s := newRedis(t, store.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}})
+	s := newRedis(t, cache.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}})
 	ctx := t.Context()
 
 	require.NoError(t, s.Set(ctx, "k", []byte("v"), time.Minute))
@@ -83,7 +83,7 @@ func TestRedisTTL(t *testing.T) {
 
 func TestRedisSetRejectsNonPositiveTTL(t *testing.T) {
 	mr := miniredis.RunT(t)
-	s := newRedis(t, store.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}})
+	s := newRedis(t, cache.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}})
 
 	// Without a TTL the entry would never expire.
 	require.Error(t, s.Set(t.Context(), "k", []byte("v"), 0))
@@ -96,22 +96,22 @@ func TestRedisPassword(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("password option", func(t *testing.T) {
-		s := newRedis(t, store.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}, Password: "secret"})
+		s := newRedis(t, cache.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}, Password: "secret"})
 		require.NoError(t, s.Ping(ctx))
 	})
 
 	t.Run("password in URL", func(t *testing.T) {
-		s := newRedis(t, store.RedisOptions{URL: redisURL(t, "redis://:secret@"+mr.Addr())})
+		s := newRedis(t, cache.RedisOptions{URL: redisURL(t, "redis://:secret@"+mr.Addr())})
 		require.NoError(t, s.Ping(ctx))
 	})
 
 	t.Run("option overrides URL", func(t *testing.T) {
-		s := newRedis(t, store.RedisOptions{URL: redisURL(t, "redis://:wrong@"+mr.Addr()), Password: "secret"})
+		s := newRedis(t, cache.RedisOptions{URL: redisURL(t, "redis://:wrong@"+mr.Addr()), Password: "secret"})
 		require.NoError(t, s.Ping(ctx))
 	})
 
 	t.Run("wrong password", func(t *testing.T) {
-		s := newRedis(t, store.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}, Password: "wrong"})
+		s := newRedis(t, cache.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}, Password: "wrong"})
 		require.Error(t, s.Ping(ctx))
 	})
 }
@@ -156,23 +156,23 @@ func TestRedisFailsFast(t *testing.T) {
 		{"hung server", silentListener},
 		{"connection refused", closedAddr},
 	}
-	ops := map[string]func(*testing.T, store.Store) error{
-		"get": func(t *testing.T, s store.Store) error {
+	ops := map[string]func(*testing.T, cache.Cache) error{
+		"get": func(t *testing.T, s cache.Cache) error {
 			_, found, err := s.Get(t.Context(), "k")
 			assert.False(t, found)
 			return err
 		},
-		"set": func(t *testing.T, s store.Store) error {
+		"set": func(t *testing.T, s cache.Cache) error {
 			return s.Set(t.Context(), "k", []byte("v"), time.Minute)
 		},
-		"ping": func(t *testing.T, s store.Store) error {
+		"ping": func(t *testing.T, s cache.Cache) error {
 			return s.Ping(t.Context())
 		},
 	}
 	for _, tt := range tests {
 		for op, call := range ops {
 			t.Run(tt.name+"/"+op, func(t *testing.T) {
-				s := newRedis(t, store.RedisOptions{
+				s := newRedis(t, cache.RedisOptions{
 					URL:     &url.URL{Scheme: "redis", Host: tt.addr(t)},
 					Timeout: shortTimeout,
 				})
@@ -189,7 +189,7 @@ func TestRedisFailsFast(t *testing.T) {
 
 func TestRedisCallerContext(t *testing.T) {
 	mr := miniredis.RunT(t)
-	s := newRedis(t, store.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}})
+	s := newRedis(t, cache.RedisOptions{URL: &url.URL{Scheme: "redis", Host: mr.Addr()}})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -205,7 +205,7 @@ func TestRedisReal(t *testing.T) {
 	if raw == "" {
 		t.Skip("PROXIE_TEST_REDIS_URL not set")
 	}
-	s := newRedis(t, store.RedisOptions{URL: redisURL(t, raw)})
+	s := newRedis(t, cache.RedisOptions{URL: redisURL(t, raw)})
 	ctx := t.Context()
 	require.NoError(t, s.Ping(ctx))
 
