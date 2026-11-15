@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"maps"
+	"net/url"
 	"testing"
 	"time"
 
@@ -12,21 +13,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// env returns a lookup over the required variables plus overrides. An empty
-// override value means "set but empty"; use unset to remove a variable.
-func env(overrides map[string]string, unset ...string) func(string) (string, bool) {
+// env returns KEY=value entries for the required variables plus overrides.
+// An empty override value means "set but empty"; use unset to remove a
+// variable.
+func env(overrides map[string]string, unset ...string) []string {
 	vars := map[string]string{
 		"PROXIE_UPSTREAM_URL": "https://api.example.com",
 		"PROXIE_REDIS_URL":    "redis://localhost:6379",
+		"PROXIE_API_KEY_ACME": "acme-key",
 	}
 	maps.Copy(vars, overrides)
 	for _, k := range unset {
 		delete(vars, k)
 	}
-	return func(name string) (string, bool) {
-		v, ok := vars[name]
-		return v, ok
+	environ := make([]string, 0, len(vars))
+	for k, v := range vars {
+		environ = append(environ, k+"="+v)
 	}
+	return environ
+}
+
+func mustURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -35,7 +46,9 @@ func TestLoadDefaults(t *testing.T) {
 	cfg, err := config.Load(env(nil))
 	require.NoError(t, err)
 
-	assert.Equal(t, "https://api.example.com", cfg.UpstreamURL.String())
+	assert.Equal(t, map[string]config.Tenant{
+		"acme": {Name: "acme", Keys: []string{"acme-key"}, UpstreamURL: mustURL(t, "https://api.example.com")},
+	}, cfg.Tenants)
 	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL.String())
 	assert.Empty(t, cfg.RedisPassword)
 	assert.Equal(t, time.Hour, cfg.CacheTTL)
@@ -87,7 +100,7 @@ func TestLoadOverrides(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	assert.Equal(t, "http://upstream:8000/v1", cfg.UpstreamURL.String())
+	assert.Equal(t, "http://upstream:8000/v1", cfg.Tenants["acme"].UpstreamURL.String())
 	assert.Equal(t, "rediss://cache:6380/2", cfg.RedisURL.String())
 	assert.Equal(t, "hunter2", cfg.RedisPassword)
 	assert.Equal(t, 15*time.Minute, cfg.CacheTTL)
@@ -115,7 +128,7 @@ func TestLoadOverrides(t *testing.T) {
 func TestLoadRequiredVars(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"PROXIE_UPSTREAM_URL", "PROXIE_REDIS_URL"} {
+	for _, name := range []string{"PROXIE_REDIS_URL"} {
 		t.Run("unset "+name, func(t *testing.T) {
 			t.Parallel()
 			_, err := config.Load(env(nil, name))
@@ -136,6 +149,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 
 	tests := map[string]string{
 		"PROXIE_UPSTREAM_URL":          "ftp://example.com",
+		"PROXIE_UPSTREAM_URL_ACME":     "example.com/v1",
 		"PROXIE_REDIS_URL":             "https://localhost:6379",
 		"PROXIE_CACHE_TTL":             "1 hour",
 		"PROXIE_REDIS_TIMEOUT":         "-1s",
@@ -163,10 +177,10 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 func TestLoadReportsAllErrors(t *testing.T) {
 	t.Parallel()
 
-	_, err := config.Load(env(map[string]string{"PROXIE_CACHE_TTL": "soon"}, "PROXIE_UPSTREAM_URL", "PROXIE_REDIS_URL"))
+	_, err := config.Load(env(map[string]string{"PROXIE_CACHE_TTL": "soon"}, "PROXIE_API_KEY_ACME", "PROXIE_REDIS_URL"))
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "PROXIE_UPSTREAM_URL: required")
+	assert.Contains(t, err.Error(), "PROXIE_API_KEY_<TENANT>: at least one tenant required")
 	assert.Contains(t, err.Error(), "PROXIE_REDIS_URL: required")
 	assert.Contains(t, err.Error(), "PROXIE_CACHE_TTL:")
 }
@@ -207,17 +221,19 @@ func TestConfigLogValueMasksSecrets(t *testing.T) {
 		"PROXIE_UPSTREAM_URL":   "https://user:upstreamsecret@api.example.com/v1?key=querysecret",
 		"PROXIE_REDIS_URL":      "redis://user:urlsecret@cache:6379",
 		"PROXIE_REDIS_PASSWORD": "envsecret",
+		"PROXIE_API_KEY_ACME":   "keysecret1,keysecret2",
 	}))
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
 	slog.New(slog.NewJSONHandler(&buf, nil)).Info("config", "config", cfg)
 
-	for _, secret := range []string{"upstreamsecret", "querysecret", "urlsecret", "envsecret"} {
+	for _, secret := range []string{"upstreamsecret", "querysecret", "urlsecret", "envsecret", "keysecret"} {
 		assert.NotContains(t, buf.String(), secret)
 	}
 	assert.Contains(t, buf.String(), "api.example.com/v1")
 	assert.Contains(t, buf.String(), `"redis_password_set":true`)
+	assert.Contains(t, buf.String(), `"tenants":{"acme":{"keys":2,`)
 	assert.Contains(t, buf.String(), "cache:6379")
 }
 
@@ -232,4 +248,116 @@ func TestConfigLogValueShowsReadableDurations(t *testing.T) {
 
 	assert.Contains(t, buf.String(), `"cache_ttl":"1h0m0s"`)
 	assert.Contains(t, buf.String(), `"redis_timeout":"200ms"`)
+}
+
+func TestLoadTenants(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(env(map[string]string{
+		"PROXIE_API_KEY_ACME":            " key-1 , key-2 ,,",
+		"PROXIE_API_KEY_Big-Corp_2":      "big-key",
+		"PROXIE_UPSTREAM_URL_BIG-CORP_2": "http://vllm.internal:8000/v1",
+	}))
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]config.Tenant{
+		"acme": {
+			Name:        "acme",
+			Keys:        []string{"key-1", "key-2"},
+			UpstreamURL: mustURL(t, "https://api.example.com"),
+		},
+		"big-corp_2": {
+			Name:        "big-corp_2",
+			Keys:        []string{"big-key"},
+			UpstreamURL: mustURL(t, "http://vllm.internal:8000/v1"),
+		},
+	}, cfg.Tenants)
+}
+
+func TestLoadDefaultUpstreamOptionalWhenEveryTenantHasOne(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(env(map[string]string{
+		"PROXIE_UPSTREAM_URL_ACME": "https://api.anthropic.com",
+	}, "PROXIE_UPSTREAM_URL"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://api.anthropic.com", cfg.Tenants["acme"].UpstreamURL.String())
+}
+
+func TestLoadRejectsInvalidTenants(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		vars  map[string]string
+		unset []string
+		want  string
+	}{
+		"no tenant": {
+			unset: []string{"PROXIE_API_KEY_ACME"},
+			want:  "PROXIE_API_KEY_<TENANT>: at least one tenant required",
+		},
+		"empty key list": {
+			vars: map[string]string{"PROXIE_API_KEY_ACME": " , "},
+			want: "PROXIE_API_KEY_ACME: must hold at least one key",
+		},
+		"invalid tenant name": {
+			vars: map[string]string{"PROXIE_API_KEY_AC.ME": "k"},
+			want: "PROXIE_API_KEY_AC.ME: tenant name may only contain",
+		},
+		"empty tenant name": {
+			vars: map[string]string{"PROXIE_API_KEY_": "k"},
+			want: "PROXIE_API_KEY_: tenant name may only contain",
+		},
+		"same tenant in different case": {
+			vars: map[string]string{"PROXIE_API_KEY_acme": "other-key"},
+			want: "PROXIE_API_KEY_acme: same tenant as PROXIE_API_KEY_ACME",
+		},
+		"key shared between tenants": {
+			vars: map[string]string{"PROXIE_API_KEY_BETA": "acme-key"},
+			want: `PROXIE_API_KEY_BETA: a key is also used by tenant "acme"`,
+		},
+		"upstream for unknown tenant": {
+			vars: map[string]string{"PROXIE_UPSTREAM_URL_ACEM": "https://api.example.com"},
+			want: `PROXIE_UPSTREAM_URL_ACEM: no PROXIE_API_KEY_<TENANT> variable for tenant "acem"`,
+		},
+		"tenant without upstream": {
+			unset: []string{"PROXIE_UPSTREAM_URL"},
+			want:  `PROXIE_UPSTREAM_URL_ACME: required for tenant "acme" because PROXIE_UPSTREAM_URL is not set`,
+		},
+		"same upstream tenant in different case": {
+			vars: map[string]string{
+				"PROXIE_UPSTREAM_URL_ACME": "https://a.example.com",
+				"PROXIE_UPSTREAM_URL_acme": "https://b.example.com",
+			},
+			want: "PROXIE_UPSTREAM_URL_acme: same tenant as PROXIE_UPSTREAM_URL_ACME",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Load(env(tt.vars, tt.unset...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestLoadSharedKeyErrorHidesKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(env(map[string]string{"PROXIE_API_KEY_BETA": "acme-key"}))
+	require.Error(t, err)
+
+	assert.NotContains(t, err.Error(), "acme-key")
+}
+
+func TestLoadInvalidDefaultUpstreamIsNotReportedAsMissing(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(env(map[string]string{"PROXIE_UPSTREAM_URL": "ftp://example.com"}))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "PROXIE_UPSTREAM_URL: must be an absolute")
+	assert.NotContains(t, err.Error(), "is not set")
 }

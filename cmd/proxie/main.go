@@ -29,7 +29,7 @@ func main() {
 }
 
 func run(ctx context.Context) int {
-	cfg, err := config.Load(os.LookupEnv)
+	cfg, err := config.Load(os.Environ())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "proxie: invalid configuration:\n%v\n", err)
 		return 1
