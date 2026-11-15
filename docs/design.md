@@ -5,7 +5,7 @@ sits between a caller application and an LLM provider. Identical requests are
 answered from Redis instead of paying the provider again.
 
 ```
-caller app ──▶ proxie ──▶ LLM provider (any, set by env var)
+caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env var)
                  │
                  └──▶ Redis
 ```
@@ -14,8 +14,8 @@ caller app ──▶ proxie ──▶ LLM provider (any, set by env var)
 
 - A response cache: identical request, stored response. Provider-side prompt
   caching hints (for example Anthropic `cache_control`) are out of scope.
-- Provider-agnostic. proxie forwards to one upstream base URL set by env var.
-  There is no provider-specific code.
+- Provider-agnostic. Each tenant forwards to one upstream base URL set by env
+  var, with a deployment-wide default. There is no provider-specific code.
 - Standalone microservice. It is not a Gin middleware library.
 - Redis is the only store.
 
@@ -24,12 +24,13 @@ caller app ──▶ proxie ──▶ LLM provider (any, set by env var)
 1. The caller sends a request with a proxie key (`X-Proxie-Key`) and the
    provider key in the provider's normal header (`Authorization` or
    `x-api-key`).
-2. proxie checks the proxie key and resolves the tenant. The proxie key header
-   is removed before forwarding. The provider key is forwarded untouched.
+2. proxie checks the proxie key and resolves the tenant and its upstream URL.
+   The proxie key header is removed before forwarding. The provider key is
+   forwarded untouched.
 3. proxie builds the cache key and asks Redis.
 4. Hit: the stored response is replayed.
-5. Miss: the request is forwarded to the upstream, the response is passed
-   back and a copy is stored.
+5. Miss: the request is forwarded to the tenant's upstream, the response is
+   passed back and a copy is stored.
 
 ## Tenancy and auth
 
@@ -40,7 +41,23 @@ caller app ──▶ proxie ──▶ LLM provider (any, set by env var)
   - A value may hold several comma-separated keys to allow key rotation.
   - Startup fails if no tenant exists or if two tenants share a key.
   - Keys are compared in constant time and are never logged.
-- The tenant list is read once at startup. Adding a tenant needs a restart.
+- Key lookup: at startup every key is hashed with SHA-256 into a map from
+  hash to tenant. A request hashes its `X-Proxie-Key` once and looks the hash
+  up, so the cost does not grow with the number of keys and the raw key is
+  never compared. A missing or unknown key gets `401`. Building the map also
+  catches keys shared between tenants.
+- One upstream URL per tenant: `PROXIE_UPSTREAM_URL_<TENANT>=<url>`, same
+  suffix rules as the keys. Without it the tenant uses `PROXIE_UPSTREAM_URL`.
+  - Per tenant, not per key: a tenant is the unit of isolation and caching.
+    A tenant that needs two upstreams is configured as two tenants.
+  - Startup fails if a tenant ends up without an upstream URL, or if
+    `PROXIE_UPSTREAM_URL_<TENANT>` names a tenant that has no keys (typo
+    guard).
+  - URLs must be absolute `http` or `https`. They are set by the operator, not
+    by callers, so private addresses (for example a self-hosted model at
+    `http://10.0.0.5`) are allowed.
+- The tenant list is read once at startup. Adding a tenant or changing its
+  upstream URL needs a restart.
 - Known trade-off: tenants share the capacity of one instance, so a busy
   tenant can slow the others (noisy neighbor). Per-tenant rate limiting is not
   part of v1.
@@ -51,6 +68,8 @@ caller app ──▶ proxie ──▶ LLM provider (any, set by env var)
 
 The hash covers:
 
+- The tenant's upstream URL, so a changed upstream never serves entries
+  stored from the previous one.
 - HTTP method, path and query string.
 - The canonicalized body: JSON with sorted object keys, no insignificant
   whitespace, numbers kept exactly as sent, array order preserved. Non-JSON
@@ -131,8 +150,9 @@ proposal and may be adjusted while building.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `PROXIE_UPSTREAM_URL` | Base URL requests are forwarded to (`http`/`https`) | required |
 | `PROXIE_API_KEY_<TENANT>` | Proxie key(s) of a tenant | at least one required |
+| `PROXIE_UPSTREAM_URL_<TENANT>` | Base URL the tenant's requests are forwarded to (`http`/`https`) | `PROXIE_UPSTREAM_URL` |
+| `PROXIE_UPSTREAM_URL` | Default upstream URL for tenants without their own | required unless every tenant has one |
 | `PROXIE_REDIS_URL` | Redis URL (`rediss://` for TLS) | required |
 | `PROXIE_REDIS_PASSWORD` | Redis password | empty |
 | `PROXIE_CACHE_TTL` | Entry lifetime | `1h` |
@@ -188,8 +208,8 @@ internal/logging/  slog setup, stdout plus optional rotated file
 internal/store/    Store interface and Redis implementation
 internal/keygen/   canonicalization and cache key building
 internal/cache/    hit/miss flow, coalescing
-internal/proxy/    reverse proxy to the upstream
-internal/auth/     proxie key check and tenant lookup
+internal/proxy/    reverse proxy to the tenant's upstream
+internal/auth/     proxie key check and tenant lookup (tenants are loaded in config)
 ```
 
 Handlers are the starting point of business logic. `server.go` only builds the
@@ -213,7 +233,8 @@ milestone is done in the pull request that is linked or currently open.
 - [x] 1. Config, structured logging, graceful shutdown
 - [ ] 2. `Store` interface and Redis implementation (timeouts, fail open)
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
-- [ ] 4. Auth: `PROXIE_API_KEY_<TENANT>` loading and key check
+- [ ] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
+  and `PROXIE_UPSTREAM_URL_<TENANT>` is done in config)
 - [ ] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
 - [ ] 6. Cache layer: hit/miss, TTL, `X-Proxie-Cache`, bypass, 2xx only
 - [ ] 7. Coalescing for non-streaming requests
@@ -226,3 +247,5 @@ milestone is done in the pull request that is linked or currently open.
 - Per-tenant rate limiting (noisy neighbor).
 - Redis lock to coalesce across replicas.
 - Opt-in to finish abandoned streams.
+- Changing tenants or their upstream URLs without a restart (management API,
+  audit log of changes).
