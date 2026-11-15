@@ -16,6 +16,12 @@ services:
   go:
     <<: *go-tool
     image: golang:1.27.3
+    environment:
+      # Lets the cache tests also run against a real Redis.
+      PROXIE_TEST_REDIS_URL: redis://redis:6379/15
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # Same golangci-lint version as CI.
   lint:
@@ -24,6 +30,8 @@ services:
 
   redis:
     image: redis:8.0-alpine
+    # Same eviction setup production Redis needs (see docs/design.md).
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
