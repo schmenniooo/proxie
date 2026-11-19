@@ -1,4 +1,9 @@
-// Package config loads the proxie configuration from environment variables.
+// Package config holds the proxie configuration.
+//
+// Config doubles as the Kong flag set of the CLI: every setting is a flag
+// that falls back to its PROXIE_* environment variable and then to its
+// default (see the struct tags). Kong only parses the values; Complete then
+// loads the tenants and validates everything, reporting all problems at once.
 package config
 
 import (
@@ -8,63 +13,69 @@ import (
 	"maps"
 	"net"
 	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/alecthomas/kong"
 )
 
 // DefaultKeyHeaders is the header allow-list used for the cache key when
-// PROXIE_KEY_HEADERS is unset.
+// PROXIE_KEY_HEADERS is unset. It must match the default tag of KeyHeaders.
 var DefaultKeyHeaders = []string{"content-type", "anthropic-version", "anthropic-beta"}
 
 const (
 	apiKeyPrefix      = "PROXIE_API_KEY_"
-	upstreamURLVar    = "PROXIE_UPSTREAM_URL"
-	upstreamURLPrefix = upstreamURLVar + "_"
+	upstreamURLPrefix = "PROXIE_UPSTREAM_URL_"
 )
 
 // tenantName is the allowed form of a tenant suffix in env var names.
 var tenantName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Config is the complete proxie configuration.
+//
+// Tenants are not flags: their env var names carry the tenant name, and keys
+// on a command line would be visible in the process list.
 type Config struct {
-	// Tenants maps the lowercased tenant name to its settings.
-	Tenants map[string]Tenant
+	UpstreamURL   URL    `name:"upstream-url" env:"PROXIE_UPSTREAM_URL" placeholder:"URL" help:"Default upstream URL for tenants without their own PROXIE_UPSTREAM_URL_<TENANT>."`
+	RedisURL      URL    `name:"redis-url" env:"PROXIE_REDIS_URL" placeholder:"URL" help:"Redis URL (rediss:// for TLS). Required."`
+	RedisPassword string `name:"redis-password" env:"PROXIE_REDIS_PASSWORD" placeholder:"PASSWORD" help:"Redis password. Prefer the env var, flags show up in the process list."`
 
-	RedisURL      *url.URL
-	RedisPassword string
+	CacheTTL     time.Duration `name:"cache-ttl" env:"PROXIE_CACHE_TTL" default:"1h" help:"Entry lifetime."`
+	IgnoreFields []string      `name:"ignore-fields" env:"PROXIE_IGNORE_FIELDS" placeholder:"FIELD" help:"Body fields excluded from the cache key."`
+	KeyHeaders   []string      `name:"key-headers" env:"PROXIE_KEY_HEADERS" default:"content-type,anthropic-version,anthropic-beta" placeholder:"HEADER" help:"Header allow-list for the cache key. Set but empty means no headers."`
 
-	CacheTTL     time.Duration
-	IgnoreFields []string
-	KeyHeaders   []string
+	MaxRequestBytes int64 `name:"max-request-bytes" env:"PROXIE_MAX_REQUEST_BYTES" default:"10485760" help:"Max request body."`
+	MaxEntryBytes   int64 `name:"max-entry-bytes" env:"PROXIE_MAX_ENTRY_BYTES" default:"10485760" help:"Max stored response."`
 
-	MaxRequestBytes int64
-	MaxEntryBytes   int64
+	Addr      string `name:"addr" env:"PROXIE_ADDR" default:":8080" placeholder:"HOST:PORT" help:"Proxy listen address."`
+	AdminAddr string `name:"admin-addr" env:"PROXIE_ADMIN_ADDR" default:":9090" placeholder:"HOST:PORT" help:"Admin listen address (/healthz, /metrics)."`
 
-	Addr      string
-	AdminAddr string
+	UpstreamTimeout        time.Duration `name:"upstream-timeout" env:"PROXIE_UPSTREAM_TIMEOUT" default:"120s" help:"Upstream, non-streaming, total."`
+	StreamFirstByteTimeout time.Duration `name:"stream-first-byte-timeout" env:"PROXIE_STREAM_FIRST_BYTE_TIMEOUT" default:"30s" help:"Upstream, streaming, time to first piece."`
+	StreamIdleTimeout      time.Duration `name:"stream-idle-timeout" env:"PROXIE_STREAM_IDLE_TIMEOUT" default:"30s" help:"Upstream, streaming, max silence between pieces."`
+	RedisTimeout           time.Duration `name:"redis-timeout" env:"PROXIE_REDIS_TIMEOUT" default:"200ms" help:"Redis operation."`
+	ShutdownTimeout        time.Duration `name:"shutdown-timeout" env:"PROXIE_SHUTDOWN_TIMEOUT" default:"25s" help:"Time in-flight requests get to finish on SIGINT/SIGTERM."`
 
-	UpstreamTimeout        time.Duration
-	StreamFirstByteTimeout time.Duration
-	StreamIdleTimeout      time.Duration
-	RedisTimeout           time.Duration
-	ShutdownTimeout        time.Duration
+	Log Log `embed:"" prefix:"log-" group:"Logging"`
 
-	Log Log
+	// Tenants maps the lowercased tenant name to its settings. Complete
+	// fills it from the PROXIE_API_KEY_<TENANT> variables.
+	Tenants map[string]Tenant `kong:"-"`
 }
 
 // Log configures logging.
 type Log struct {
-	Level  slog.Level
-	Format string // "json" or "text"
+	Level  slog.Level `name:"level" env:"PROXIE_LOG_LEVEL" default:"info" help:"debug, info, warn or error."`
+	Format string     `name:"format" env:"PROXIE_LOG_FORMAT" default:"json" help:"json or text."`
 
 	// File is an optional log file path. Logs always go to stdout as well.
-	File           string
-	FileMaxMB      int
-	FileMaxBackups int
-	FileMaxAgeDays int
+	File           string `name:"file" env:"PROXIE_LOG_FILE" placeholder:"PATH" help:"Optional log file, written in addition to stdout."`
+	FileMaxMB      int    `name:"file-max-mb" env:"PROXIE_LOG_FILE_MAX_MB" default:"100" help:"Rotate the log file at this size."`
+	FileMaxBackups int    `name:"file-max-backups" env:"PROXIE_LOG_FILE_MAX_BACKUPS" default:"5" help:"Rotated log files to keep (0 keeps all)."`
+	FileMaxAgeDays int    `name:"file-max-age-days" env:"PROXIE_LOG_FILE_MAX_AGE_DAYS" default:"14" help:"Delete rotated log files older than this (0 keeps them)."`
 }
 
 // Tenant is one caller of proxie, identified by its proxie keys.
@@ -73,8 +84,39 @@ type Tenant struct {
 	// Keys are the accepted proxie keys. Several allow key rotation.
 	Keys []string
 	// UpstreamURL is where the tenant's requests are forwarded: its own
-	// PROXIE_UPSTREAM_URL_<TENANT>, or PROXIE_UPSTREAM_URL as the default.
+	// PROXIE_UPSTREAM_URL_<TENANT>, or the default upstream URL.
 	UpstreamURL *url.URL
+}
+
+// URL is a URL setting. Decoding never fails, so Kong never repeats the value
+// (which may hold a password) in an error message; Complete reports invalid
+// URLs instead. A nil URL means unset.
+type URL struct {
+	*url.URL
+
+	invalid bool
+}
+
+// Decode implements kong.MapperValue.
+func (u *URL) Decode(ctx *kong.DecodeContext) error {
+	var raw string
+	if err := ctx.Scan.PopValueInto("url", &raw); err != nil {
+		return err
+	}
+	*u = parseURL(raw)
+	return nil
+}
+
+func parseURL(raw string) URL {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return URL{}
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return URL{invalid: true}
+	}
+	return URL{URL: u}
 }
 
 // LogValue renders the tenant for logging without its keys.
@@ -93,7 +135,7 @@ func (c Config) LogValue() slog.Value {
 	}
 	return slog.GroupValue(
 		slog.Attr{Key: "tenants", Value: slog.GroupValue(tenants...)},
-		slog.String("redis_url", redactURL(c.RedisURL)),
+		slog.String("redis_url", redactURL(c.RedisURL.URL)),
 		slog.Bool("redis_password_set", c.RedisPassword != ""),
 		slog.String("cache_ttl", c.CacheTTL.String()),
 		slog.Any("ignore_fields", c.IgnoreFields),
@@ -113,106 +155,145 @@ func (c Config) LogValue() slog.Value {
 	)
 }
 
-// redactURL masks the password and drops the query and fragment, which can
-// carry credentials (for example ?key=).
+// RedactURL masks the password and drops the query and fragment, which can
+// carry credentials (for example ?key=). It returns "" for nil.
+func RedactURL(u *url.URL) string { return redactURL(u) }
+
 func redactURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
 	safe := *u
 	safe.RawQuery = ""
 	safe.Fragment = ""
 	return safe.Redacted()
 }
 
-// Load reads the configuration from environ, which is normally os.Environ()
-// (KEY=value entries). All invalid or missing variables are reported together.
-func Load(environ []string) (Config, error) {
+// Complete loads the tenants from environ, which is normally os.Environ()
+// (KEY=value entries), normalizes the lists and validates every setting. All
+// invalid or missing settings are reported together.
+func (c *Config) Complete(environ []string) error {
 	vars := make(map[string]string, len(environ))
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok {
 			vars[k] = v
 		}
 	}
-	l := &loader{lookup: func(name string) (string, bool) {
-		v, ok := vars[name]
-		return v, ok
-	}}
-	cfg := Config{
-		Tenants:       l.tenants(slices.Sorted(maps.Keys(vars))),
-		RedisURL:      l.url("PROXIE_REDIS_URL", "redis", "rediss"),
-		RedisPassword: l.string("PROXIE_REDIS_PASSWORD", ""),
+	v := &validator{vars: vars}
 
-		CacheTTL:     l.duration("PROXIE_CACHE_TTL", time.Hour),
-		IgnoreFields: l.list("PROXIE_IGNORE_FIELDS", nil, false),
-		KeyHeaders:   l.list("PROXIE_KEY_HEADERS", DefaultKeyHeaders, true),
+	c.Tenants = v.tenants(c.UpstreamURL)
+	v.requiredURL("RedisURL", c.RedisURL, "redis", "rediss")
 
-		MaxRequestBytes: int64(l.int("PROXIE_MAX_REQUEST_BYTES", 10<<20, 1)),
-		MaxEntryBytes:   int64(l.int("PROXIE_MAX_ENTRY_BYTES", 10<<20, 1)),
+	c.IgnoreFields = cleanList(c.IgnoreFields, false)
+	c.KeyHeaders = cleanList(c.KeyHeaders, true)
 
-		Addr:      l.addr("PROXIE_ADDR", ":8080"),
-		AdminAddr: l.addr("PROXIE_ADMIN_ADDR", ":9090"),
-
-		UpstreamTimeout:        l.duration("PROXIE_UPSTREAM_TIMEOUT", 120*time.Second),
-		StreamFirstByteTimeout: l.duration("PROXIE_STREAM_FIRST_BYTE_TIMEOUT", 30*time.Second),
-		StreamIdleTimeout:      l.duration("PROXIE_STREAM_IDLE_TIMEOUT", 30*time.Second),
-		RedisTimeout:           l.duration("PROXIE_REDIS_TIMEOUT", 200*time.Millisecond),
-		ShutdownTimeout:        l.duration("PROXIE_SHUTDOWN_TIMEOUT", 25*time.Second),
-
-		Log: Log{
-			Level:          l.level("PROXIE_LOG_LEVEL", slog.LevelInfo),
-			Format:         l.oneOf("PROXIE_LOG_FORMAT", "json", "json", "text"),
-			File:           l.string("PROXIE_LOG_FILE", ""),
-			FileMaxMB:      l.int("PROXIE_LOG_FILE_MAX_MB", 100, 1),
-			FileMaxBackups: l.int("PROXIE_LOG_FILE_MAX_BACKUPS", 5, 0),
-			FileMaxAgeDays: l.int("PROXIE_LOG_FILE_MAX_AGE_DAYS", 14, 0),
-		},
+	for field, d := range map[string]time.Duration{
+		"CacheTTL":               c.CacheTTL,
+		"UpstreamTimeout":        c.UpstreamTimeout,
+		"StreamFirstByteTimeout": c.StreamFirstByteTimeout,
+		"StreamIdleTimeout":      c.StreamIdleTimeout,
+		"RedisTimeout":           c.RedisTimeout,
+		"ShutdownTimeout":        c.ShutdownTimeout,
+	} {
+		if d <= 0 {
+			v.fail(label(field), "must be a positive duration like 30s, got %s", d)
+		}
 	}
-	if err := errors.Join(l.errs...); err != nil {
-		return Config{}, err
+	v.minimum("MaxRequestBytes", c.MaxRequestBytes, 1)
+	v.minimum("MaxEntryBytes", c.MaxEntryBytes, 1)
+	v.addr("Addr", c.Addr)
+	v.addr("AdminAddr", c.AdminAddr)
+
+	c.Log.Format = strings.ToLower(strings.TrimSpace(c.Log.Format))
+	if c.Log.Format != "json" && c.Log.Format != "text" {
+		v.fail(label("Log.Format"), "must be json or text, got %q", c.Log.Format)
 	}
-	return cfg, nil
+	c.Log.File = strings.TrimSpace(c.Log.File)
+	v.minimum("Log.FileMaxMB", int64(c.Log.FileMaxMB), 1)
+	v.minimum("Log.FileMaxBackups", int64(c.Log.FileMaxBackups), 0)
+	v.minimum("Log.FileMaxAgeDays", int64(c.Log.FileMaxAgeDays), 0)
+
+	// Sorted, so the message does not depend on map iteration order.
+	slices.SortFunc(v.errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
+	return errors.Join(v.errs...)
 }
 
-// loader parses variables and collects every error instead of stopping at
-// the first one.
-type loader struct {
-	lookup func(string) (string, bool)
-	errs   []error
-}
-
-func (l *loader) fail(name, format string, args ...any) {
-	l.errs = append(l.errs, fmt.Errorf("%s: %s", name, fmt.Sprintf(format, args...)))
-}
-
-// value returns the trimmed value and whether it is set and not empty.
-func (l *loader) value(name string) (string, bool) {
-	v, ok := l.lookup(name)
-	v = strings.TrimSpace(v)
-	return v, ok && v != ""
-}
-
-func (l *loader) string(name, def string) string {
-	if v, ok := l.value(name); ok {
-		return v
+// label names a setting in error messages by its flag and env var, for
+// example "--cache-ttl ($PROXIE_CACHE_TTL)". field is a Config field name,
+// with "Log." for the nested logging fields.
+func label(field string) string {
+	t, prefix := reflect.TypeFor[Config](), ""
+	if name, ok := strings.CutPrefix(field, "Log."); ok {
+		t, prefix, field = reflect.TypeFor[Log](), "log-", name
 	}
-	return def
+	f, ok := t.FieldByName(field)
+	if !ok {
+		panic("config: no field " + field)
+	}
+	return fmt.Sprintf("--%s%s ($%s)", prefix, f.Tag.Get("name"), f.Tag.Get("env"))
+}
+
+// validator collects every error instead of stopping at the first one.
+type validator struct {
+	vars map[string]string
+	errs []error
+}
+
+func (v *validator) fail(name, format string, args ...any) {
+	v.errs = append(v.errs, fmt.Errorf("%s: %s", name, fmt.Sprintf(format, args...)))
+}
+
+func (v *validator) minimum(field string, n, minimum int64) {
+	if n < minimum {
+		v.fail(label(field), "must be an integer >= %d, got %d", minimum, n)
+	}
+}
+
+func (v *validator) addr(field, addr string) {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		v.fail(label(field), "must be host:port like :8080, got %q", addr)
+	}
+}
+
+// requiredURL checks that the URL setting field is set and valid.
+func (v *validator) requiredURL(field string, u URL, schemes ...string) {
+	if u.URL == nil && !u.invalid {
+		v.fail(label(field), "required")
+		return
+	}
+	v.checkURL(label(field), u, schemes...)
+}
+
+// checkURL checks a set URL. Messages never repeat the URL, which may hold
+// a password.
+func (v *validator) checkURL(name string, u URL, schemes ...string) bool {
+	if u.invalid {
+		v.fail(name, "not a valid URL")
+		return false
+	}
+	if !slices.Contains(schemes, u.Scheme) || u.Host == "" {
+		v.fail(name, "must be an absolute %s URL", strings.Join(schemes, " or "))
+		return false
+	}
+	return true
 }
 
 // tenants builds the tenants from the PROXIE_API_KEY_<TENANT> and
-// PROXIE_UPSTREAM_URL_<TENANT> variables among names, with PROXIE_UPSTREAM_URL
-// as the default upstream.
-func (l *loader) tenants(names []string) map[string]Tenant {
+// PROXIE_UPSTREAM_URL_<TENANT> variables, with def as the default upstream.
+func (v *validator) tenants(def URL) map[string]Tenant {
 	tenants := map[string]Tenant{}
-	vars := map[string]string{}   // tenant -> its PROXIE_API_KEY_ variable
-	owners := map[string]string{} // key -> tenant, to reject shared keys
-	urls := map[string]string{}   // tenant -> its PROXIE_UPSTREAM_URL_ variable
+	keyVars := map[string]string{} // tenant -> its PROXIE_API_KEY_ variable
+	owners := map[string]string{}  // key -> tenant, to reject shared keys
+	urlVars := map[string]string{} // tenant -> its PROXIE_UPSTREAM_URL_ variable
 
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(v.vars)) {
 		if suffix, ok := strings.CutPrefix(name, upstreamURLPrefix); ok {
-			if tenant, ok := l.tenantSuffix(name, suffix); ok {
-				if prev, dup := urls[tenant]; dup {
-					l.fail(name, "same tenant as %s", prev)
+			if tenant, ok := v.tenantSuffix(name, suffix); ok {
+				if prev, dup := urlVars[tenant]; dup {
+					v.fail(name, "same tenant as %s", prev)
 					continue
 				}
-				urls[tenant] = name
+				urlVars[tenant] = name
 			}
 			continue
 		}
@@ -220,26 +301,25 @@ func (l *loader) tenants(names []string) map[string]Tenant {
 		if !ok {
 			continue
 		}
-		tenant, ok := l.tenantSuffix(name, suffix)
+		tenant, ok := v.tenantSuffix(name, suffix)
 		if !ok {
 			continue
 		}
-		if prev, dup := vars[tenant]; dup {
-			l.fail(name, "same tenant as %s", prev)
+		if prev, dup := keyVars[tenant]; dup {
+			v.fail(name, "same tenant as %s", prev)
 			continue
 		}
-		vars[tenant] = name
+		keyVars[tenant] = name
 
-		v, _ := l.lookup(name)
-		keys := splitList(v, false)
+		keys := cleanList(strings.Split(v.vars[name], ","), false)
 		if len(keys) == 0 {
-			l.fail(name, "must hold at least one key")
+			v.fail(name, "must hold at least one key")
 			continue
 		}
 		for _, key := range keys {
 			if owner, dup := owners[key]; dup {
 				// Never repeat the key itself.
-				l.fail(name, "a key is also used by tenant %q", owner)
+				v.fail(name, "a key is also used by tenant %q", owner)
 				continue
 			}
 			owners[key] = tenant
@@ -247,28 +327,32 @@ func (l *loader) tenants(names []string) map[string]Tenant {
 		tenants[tenant] = Tenant{Name: tenant, Keys: keys}
 	}
 
-	if len(vars) == 0 {
-		l.fail(apiKeyPrefix+"<TENANT>", "at least one tenant required")
+	if len(keyVars) == 0 {
+		v.fail(apiKeyPrefix+"<TENANT>", "at least one tenant required")
 	}
 
-	def := l.optionalURL(upstreamURLVar, "http", "https")
-	for _, tenant := range slices.Sorted(maps.Keys(urls)) {
-		if _, ok := vars[tenant]; !ok {
-			l.fail(urls[tenant], "no %s<TENANT> variable for tenant %q", apiKeyPrefix, tenant)
+	defName := label("UpstreamURL")
+	defValid := def.URL != nil && v.checkURL(defName, def, "http", "https")
+	for _, tenant := range slices.Sorted(maps.Keys(urlVars)) {
+		if _, ok := keyVars[tenant]; !ok {
+			v.fail(urlVars[tenant], "no %s<TENANT> variable for tenant %q", apiKeyPrefix, tenant)
 		}
 	}
 	for _, tenant := range slices.Sorted(maps.Keys(tenants)) {
 		t := tenants[tenant]
-		switch name, ok := urls[tenant]; {
+		switch name, ok := urlVars[tenant]; {
 		case ok:
-			t.UpstreamURL = l.url(name, "http", "https")
-		case def != nil:
-			t.UpstreamURL = def
-		default:
-			if _, set := l.value(upstreamURLVar); !set {
-				l.fail(upstreamURLPrefix+strings.ToUpper(tenant),
-					"required for tenant %q because %s is not set", tenant, upstreamURLVar)
+			u := parseURL(v.vars[name])
+			if u.URL == nil && !u.invalid {
+				v.fail(name, "must not be empty")
+			} else if v.checkURL(name, u, "http", "https") {
+				t.UpstreamURL = u.URL
 			}
+		case defValid:
+			t.UpstreamURL = def.URL
+		case def.URL == nil && !def.invalid:
+			v.fail(upstreamURLPrefix+strings.ToUpper(tenant),
+				"required for tenant %q because %s is not set", tenant, defName)
 		}
 		tenants[tenant] = t
 	}
@@ -277,121 +361,26 @@ func (l *loader) tenants(names []string) map[string]Tenant {
 
 // tenantSuffix validates the tenant part of an env var name and returns it
 // lowercased.
-func (l *loader) tenantSuffix(name, suffix string) (string, bool) {
+func (v *validator) tenantSuffix(name, suffix string) (string, bool) {
 	if !tenantName.MatchString(suffix) {
-		l.fail(name, "tenant name may only contain letters, digits, - and _")
+		v.fail(name, "tenant name may only contain letters, digits, - and _")
 		return "", false
 	}
 	return strings.ToLower(suffix), true
 }
 
-// url parses a required absolute URL with one of the given schemes.
-func (l *loader) url(name string, schemes ...string) *url.URL {
-	if _, ok := l.value(name); !ok {
-		l.fail(name, "required")
-		return nil
-	}
-	return l.optionalURL(name, schemes...)
-}
-
-// optionalURL parses an absolute URL with one of the given schemes, or
-// returns nil if the variable is unset or empty.
-func (l *loader) optionalURL(name string, schemes ...string) *url.URL {
-	v, ok := l.value(name)
-	if !ok {
-		return nil
-	}
-	u, err := url.Parse(v)
-	if err != nil {
-		// The parse error repeats the URL, which may hold a password.
-		l.fail(name, "not a valid URL")
-		return nil
-	}
-	if !slices.Contains(schemes, u.Scheme) || u.Host == "" {
-		l.fail(name, "must be an absolute %s URL", strings.Join(schemes, " or "))
-		return nil
-	}
-	return u
-}
-
-func (l *loader) duration(name string, def time.Duration) time.Duration {
-	v, ok := l.value(name)
-	if !ok {
-		return def
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil || d <= 0 {
-		l.fail(name, "must be a positive duration like 30s, got %q", v)
-		return def
-	}
-	return d
-}
-
-func (l *loader) int(name string, def, minimum int) int {
-	v, ok := l.value(name)
-	if !ok {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < minimum {
-		l.fail(name, "must be an integer >= %d, got %q", minimum, v)
-		return def
-	}
-	return n
-}
-
-func (l *loader) addr(name, def string) string {
-	v := l.string(name, def)
-	if _, _, err := net.SplitHostPort(v); err != nil {
-		l.fail(name, "must be host:port like :8080, got %q", v)
-	}
-	return v
-}
-
-func (l *loader) level(name string, def slog.Level) slog.Level {
-	v, ok := l.value(name)
-	if !ok {
-		return def
-	}
-	var lvl slog.Level
-	if err := lvl.UnmarshalText([]byte(v)); err != nil {
-		l.fail(name, "must be debug, info, warn or error, got %q", v)
-		return def
-	}
-	return lvl
-}
-
-func (l *loader) oneOf(name, def string, allowed ...string) string {
-	v := strings.ToLower(l.string(name, def))
-	if !slices.Contains(allowed, v) {
-		l.fail(name, "must be one of %s, got %q", strings.Join(allowed, ", "), v)
-		return def
-	}
-	return v
-}
-
-// list parses a comma-separated list. Unset means def; set but empty means an
-// empty list.
-func (l *loader) list(name string, def []string, lower bool) []string {
-	v, ok := l.lookup(name)
-	if !ok {
-		return slices.Clone(def)
-	}
-	return splitList(v, lower)
-}
-
-// splitList splits a comma-separated list, trimming items and dropping empty
+// cleanList trims the items, optionally lowercases them and drops empty
 // ones. It never returns nil.
-func splitList(v string, lower bool) []string {
-	items := []string{}
-	for item := range strings.SplitSeq(v, ",") {
+func cleanList(items []string, lower bool) []string {
+	out := []string{}
+	for _, item := range items {
 		item = strings.TrimSpace(item)
 		if lower {
 			item = strings.ToLower(item)
 		}
 		if item != "" {
-			items = append(items, item)
+			out = append(out, item)
 		}
 	}
-	return items
+	return out
 }

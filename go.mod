@@ -3,6 +3,7 @@ module github.com/schmenniooo/proxie
 go 1.27.2
 
 require (
+	github.com/alecthomas/kong v1.17.0
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/redis/go-redis/v9 v9.23.0

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown, the Redis cache (`internal/cache`) and a hello world `GET /hello` exist.
+proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown, the Redis cache (`internal/cache`), the Kong CLI (`serve`, `doctor`, `config`, `version`) and a hello world `GET /hello` exist.
 
 ## Commands
 
@@ -24,9 +24,9 @@ task check                                    # lint, then test
 
 ## Conventions
 
-- Entrypoint is `cmd/proxie/main.go`. Packages live under `internal/`.
+- Entrypoint is `cmd/proxie/main.go`, which only hands off to `internal/cli` (Kong root command, one file per command). Packages live under `internal/`.
 - `internal/server/server.go` only builds the Gin engine (middleware, then `registerRoutes`). Routes are registered in `routes.go`; handlers live in `handlers.go`, which is the starting point of business logic. Middleware is in `middleware.go`, serving and graceful shutdown in `run.go`.
-- Config comes only from env vars via `internal/config` (see `docs/design.md`). Log with the injected `*slog.Logger`; never log prompts, bodies, headers, query strings or keys.
+- Config comes from env vars and flags via `internal/config` (see `docs/design.md`). `Config` carries Kong tags (`name`, `env`, `default`, `help`); a new setting is a new tagged field plus its check in `Complete`. Kong only parses; `Complete` loads tenants and validates, collecting all errors. URL fields use `config.URL`, whose decoding never fails, so Kong never echoes a URL (and its password) in an error. Log with the injected `*slog.Logger`; never log prompts, bodies, headers, query strings or keys.
 - Exactly one `_test.go` per source file, next to it (`foo.go` -> `foo_test.go`). Tests use the external `_test` package and go through exported APIs (e.g. `server.New().ServeHTTP`). Do not add separate white box test files.
 - Tests use `testify` (`assert`). Build requests with `httptest.NewRequestWithContext(t.Context(), ...)`; the `noctx` linter rejects `httptest.NewRequest`.
 

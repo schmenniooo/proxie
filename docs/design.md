@@ -152,6 +152,13 @@ All values are configurable by env var.
 Environment variables, wrapped in one config struct. Names below are the
 proposal and may be adjusted while building.
 
+The config struct is also the flag set of the CLI (Kong struct tags): every
+variable below except the per-tenant ones has a flag of the same name in
+kebab case (`PROXIE_CACHE_TTL` is `--cache-ttl`, `PROXIE_LOG_FILE` is
+`--log-file`). A flag wins over its variable, which wins over the default.
+Tenant keys and per-tenant upstream URLs are env only: their names carry the
+tenant, and keys on a command line would show up in the process list.
+
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `PROXIE_API_KEY_<TENANT>` | Proxie key(s) of a tenant | at least one required |
@@ -178,7 +185,24 @@ proposal and may be adjusted while building.
 | `PROXIE_LOG_FILE_MAX_BACKUPS` | Rotated log files to keep (`0` keeps all) | `5` |
 | `PROXIE_LOG_FILE_MAX_AGE_DAYS` | Delete rotated log files older than this (`0` keeps them) | `14` |
 
-Startup fails and lists every missing or invalid variable at once.
+Startup fails and lists every missing or invalid variable at once. Only a
+value that cannot be parsed at all (for example `PROXIE_CACHE_TTL=soon`) is
+reported on its own first, by the flag parser. Errors never repeat URLs or
+keys, which may hold secrets.
+
+## CLI
+
+One binary, built with [Kong](https://github.com/alecthomas/kong). Commands
+share the code paths of the server, so they cannot drift from it.
+
+| Command | Purpose |
+| --- | --- |
+| `proxie serve` | The proxy. The default when no command is given, so `proxie --addr :9000` works too |
+| `proxie doctor` | Checks config, Redis (PING, latency, `maxmemory-policy`), each upstream (DNS, TLS, HTTP) and the log file. `pass`, `warn` or `fail` per check, table or `--json`, exit code 1 when a check fails |
+| `proxie config` | The resolved config with secrets masked (`Config.LogValue`), text or `--json` |
+| `proxie version` | Version and commit, set via ldflags at build time |
+
+No command prints prompts, bodies or keys.
 
 ## Shutdown
 
@@ -204,10 +228,12 @@ second signal stops the process at once.
 ## Package layout
 
 ```
-cmd/proxie/        main.go, starts the server
+cmd/proxie/        main.go, signal handling, hands off to internal/cli
+internal/cli/      Kong root command and the serve, doctor, config, version commands
+internal/doctor/   doctor checks and their table/JSON output
 internal/server/   engine setup (server.go), routes (routes.go), handlers (handlers.go),
                    middleware (middleware.go), serve and shutdown (run.go)
-internal/config/   env config struct
+internal/config/   config struct (env vars and flags), validation, tenants
 internal/logging/  slog setup, stdout plus optional rotated file
 internal/keygen/   canonicalization and cache key building
 internal/cache/    Cache interface and Redis implementation, hit/miss flow, coalescing

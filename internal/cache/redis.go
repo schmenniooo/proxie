@@ -89,6 +89,22 @@ func (r *Redis) Ping(ctx context.Context) error {
 	return nil
 }
 
+// MaxMemoryPolicy returns the eviction policy Redis runs with. Managed Redis
+// services may block CONFIG, in which case it returns an error.
+func (r *Redis) MaxMemoryPolicy(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	res, err := r.client.ConfigGet(ctx, "maxmemory-policy").Result()
+	if err != nil {
+		return "", fmt.Errorf("redis config get: %w", err)
+	}
+	policy, ok := res["maxmemory-policy"]
+	if !ok {
+		return "", errors.New("redis config get: maxmemory-policy not returned")
+	}
+	return policy, nil
+}
+
 func (r *Redis) Close() error {
 	return r.client.Close()
 }

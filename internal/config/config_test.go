@@ -5,32 +5,52 @@ import (
 	"log/slog"
 	"maps"
 	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/alecthomas/kong"
 	"github.com/schmenniooo/proxie/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// env returns KEY=value entries for the required variables plus overrides.
-// An empty override value means "set but empty"; use unset to remove a
-// variable.
-func env(overrides map[string]string, unset ...string) []string {
-	vars := map[string]string{
-		"PROXIE_UPSTREAM_URL": "https://api.example.com",
-		"PROXIE_REDIS_URL":    "redis://localhost:6379",
-		"PROXIE_API_KEY_ACME": "acme-key",
+// base holds the required variables every test starts from.
+var base = map[string]string{
+	"PROXIE_UPSTREAM_URL": "https://api.example.com",
+	"PROXIE_REDIS_URL":    "redis://localhost:6379",
+	"PROXIE_API_KEY_ACME": "acme-key",
+}
+
+// load sets the base variables plus overrides in the process environment
+// (an empty override means "set but empty"), removes unset and every other
+// PROXIE_ variable, then parses args with Kong and completes the config the
+// way the CLI does. Tests using it cannot run in parallel.
+func load(t *testing.T, overrides map[string]string, unset []string, args ...string) (config.Config, error) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		if k, _, _ := strings.Cut(kv, "="); strings.HasPrefix(k, "PROXIE_") {
+			t.Setenv(k, "") // restores the variable after the test
+			require.NoError(t, os.Unsetenv(k))
+		}
 	}
+	vars := maps.Clone(base)
 	maps.Copy(vars, overrides)
 	for _, k := range unset {
 		delete(vars, k)
 	}
-	environ := make([]string, 0, len(vars))
 	for k, v := range vars {
-		environ = append(environ, k+"="+v)
+		t.Setenv(k, v)
 	}
-	return environ
+
+	var cfg config.Config
+	parser, err := kong.New(&cfg, kong.Exit(func(int) { t.Fatal("kong exited") }))
+	require.NoError(t, err)
+	if _, err := parser.Parse(args); err != nil {
+		return config.Config{}, err
+	}
+	return cfg, cfg.Complete(os.Environ())
 }
 
 func mustURL(t *testing.T, raw string) *url.URL {
@@ -41,9 +61,7 @@ func mustURL(t *testing.T, raw string) *url.URL {
 }
 
 func TestLoadDefaults(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(nil))
+	cfg, err := load(t, nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]config.Tenant{
@@ -73,9 +91,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadOverrides(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(map[string]string{
+	cfg, err := load(t, map[string]string{
 		"PROXIE_UPSTREAM_URL":              "http://upstream:8000/v1",
 		"PROXIE_REDIS_URL":                 "rediss://cache:6380/2",
 		"PROXIE_REDIS_PASSWORD":            "hunter2",
@@ -97,7 +113,7 @@ func TestLoadOverrides(t *testing.T) {
 		"PROXIE_LOG_FILE_MAX_MB":           "10",
 		"PROXIE_LOG_FILE_MAX_BACKUPS":      "0",
 		"PROXIE_LOG_FILE_MAX_AGE_DAYS":     "0",
-	}))
+	}, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, "http://upstream:8000/v1", cfg.Tenants["acme"].UpstreamURL.String())
@@ -126,27 +142,21 @@ func TestLoadOverrides(t *testing.T) {
 }
 
 func TestLoadRequiredVars(t *testing.T) {
-	t.Parallel()
-
 	for _, name := range []string{"PROXIE_REDIS_URL"} {
 		t.Run("unset "+name, func(t *testing.T) {
-			t.Parallel()
-			_, err := config.Load(env(nil, name))
+			_, err := load(t, nil, []string{name})
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), name+": required")
+			assert.Contains(t, err.Error(), "--redis-url ($PROXIE_REDIS_URL): required")
 		})
 		t.Run("empty "+name, func(t *testing.T) {
-			t.Parallel()
-			_, err := config.Load(env(map[string]string{name: "  "}))
+			_, err := load(t, map[string]string{name: "  "}, nil)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), name+": required")
+			assert.Contains(t, err.Error(), "--redis-url ($PROXIE_REDIS_URL): required")
 		})
 	}
 }
 
 func TestLoadRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
-
 	tests := map[string]string{
 		"PROXIE_UPSTREAM_URL":          "ftp://example.com",
 		"PROXIE_UPSTREAM_URL_ACME":     "example.com/v1",
@@ -166,38 +176,32 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 	}
 	for name, value := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			_, err := config.Load(env(map[string]string{name: value}))
+			_, err := load(t, map[string]string{name: value}, nil)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), name+":")
+			// Both Kong's parse errors and Complete's name the variable.
+			assert.Contains(t, err.Error(), name)
 		})
 	}
 }
 
 func TestLoadReportsAllErrors(t *testing.T) {
-	t.Parallel()
-
-	_, err := config.Load(env(map[string]string{"PROXIE_CACHE_TTL": "soon"}, "PROXIE_API_KEY_ACME", "PROXIE_REDIS_URL"))
+	_, err := load(t, map[string]string{"PROXIE_CACHE_TTL": "0s"}, []string{"PROXIE_API_KEY_ACME", "PROXIE_REDIS_URL"})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "PROXIE_API_KEY_<TENANT>: at least one tenant required")
-	assert.Contains(t, err.Error(), "PROXIE_REDIS_URL: required")
-	assert.Contains(t, err.Error(), "PROXIE_CACHE_TTL:")
+	assert.Contains(t, err.Error(), "--redis-url ($PROXIE_REDIS_URL): required")
+	assert.Contains(t, err.Error(), "--cache-ttl ($PROXIE_CACHE_TTL): must be a positive duration")
 }
 
 func TestLoadInvalidURLErrorHidesPassword(t *testing.T) {
-	t.Parallel()
-
-	_, err := config.Load(env(map[string]string{"PROXIE_REDIS_URL": "redis://:s3cret@host:bad port"}))
+	_, err := load(t, map[string]string{"PROXIE_REDIS_URL": "redis://:s3cret@host:bad port"}, nil)
 	require.Error(t, err)
 
 	assert.NotContains(t, err.Error(), "s3cret")
 }
 
 func TestLoadKeyHeadersSetButEmptyMeansNone(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(map[string]string{"PROXIE_KEY_HEADERS": ""}))
+	cfg, err := load(t, map[string]string{"PROXIE_KEY_HEADERS": ""}, nil)
 	require.NoError(t, err)
 
 	assert.Empty(t, cfg.KeyHeaders)
@@ -205,9 +209,7 @@ func TestLoadKeyHeadersSetButEmptyMeansNone(t *testing.T) {
 }
 
 func TestLoadDoesNotShareDefaultKeyHeaders(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(nil))
+	cfg, err := load(t, nil, nil)
 	require.NoError(t, err)
 	cfg.KeyHeaders[0] = "changed"
 
@@ -215,14 +217,12 @@ func TestLoadDoesNotShareDefaultKeyHeaders(t *testing.T) {
 }
 
 func TestConfigLogValueMasksSecrets(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(map[string]string{
+	cfg, err := load(t, map[string]string{
 		"PROXIE_UPSTREAM_URL":   "https://user:upstreamsecret@api.example.com/v1?key=querysecret",
 		"PROXIE_REDIS_URL":      "redis://user:urlsecret@cache:6379",
 		"PROXIE_REDIS_PASSWORD": "envsecret",
 		"PROXIE_API_KEY_ACME":   "keysecret1,keysecret2",
-	}))
+	}, nil)
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -238,9 +238,7 @@ func TestConfigLogValueMasksSecrets(t *testing.T) {
 }
 
 func TestConfigLogValueShowsReadableDurations(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(nil))
+	cfg, err := load(t, nil, nil)
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -251,13 +249,11 @@ func TestConfigLogValueShowsReadableDurations(t *testing.T) {
 }
 
 func TestLoadTenants(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(map[string]string{
+	cfg, err := load(t, map[string]string{
 		"PROXIE_API_KEY_ACME":            " key-1 , key-2 ,,",
 		"PROXIE_API_KEY_Big-Corp_2":      "big-key",
 		"PROXIE_UPSTREAM_URL_BIG-CORP_2": "http://vllm.internal:8000/v1",
-	}))
+	}, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]config.Tenant{
@@ -275,19 +271,15 @@ func TestLoadTenants(t *testing.T) {
 }
 
 func TestLoadDefaultUpstreamOptionalWhenEveryTenantHasOne(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.Load(env(map[string]string{
+	cfg, err := load(t, map[string]string{
 		"PROXIE_UPSTREAM_URL_ACME": "https://api.anthropic.com",
-	}, "PROXIE_UPSTREAM_URL"))
+	}, []string{"PROXIE_UPSTREAM_URL"})
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://api.anthropic.com", cfg.Tenants["acme"].UpstreamURL.String())
 }
 
 func TestLoadRejectsInvalidTenants(t *testing.T) {
-	t.Parallel()
-
 	tests := map[string]struct {
 		vars  map[string]string
 		unset []string
@@ -323,7 +315,7 @@ func TestLoadRejectsInvalidTenants(t *testing.T) {
 		},
 		"tenant without upstream": {
 			unset: []string{"PROXIE_UPSTREAM_URL"},
-			want:  `PROXIE_UPSTREAM_URL_ACME: required for tenant "acme" because PROXIE_UPSTREAM_URL is not set`,
+			want:  `PROXIE_UPSTREAM_URL_ACME: required for tenant "acme" because --upstream-url ($PROXIE_UPSTREAM_URL) is not set`,
 		},
 		"same upstream tenant in different case": {
 			vars: map[string]string{
@@ -335,8 +327,7 @@ func TestLoadRejectsInvalidTenants(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			_, err := config.Load(env(tt.vars, tt.unset...))
+			_, err := load(t, tt.vars, tt.unset)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
 		})
@@ -344,20 +335,51 @@ func TestLoadRejectsInvalidTenants(t *testing.T) {
 }
 
 func TestLoadSharedKeyErrorHidesKey(t *testing.T) {
-	t.Parallel()
-
-	_, err := config.Load(env(map[string]string{"PROXIE_API_KEY_BETA": "acme-key"}))
+	_, err := load(t, map[string]string{"PROXIE_API_KEY_BETA": "acme-key"}, nil)
 	require.Error(t, err)
 
 	assert.NotContains(t, err.Error(), "acme-key")
 }
 
 func TestLoadInvalidDefaultUpstreamIsNotReportedAsMissing(t *testing.T) {
-	t.Parallel()
-
-	_, err := config.Load(env(map[string]string{"PROXIE_UPSTREAM_URL": "ftp://example.com"}))
+	_, err := load(t, map[string]string{"PROXIE_UPSTREAM_URL": "ftp://example.com"}, nil)
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "PROXIE_UPSTREAM_URL: must be an absolute")
+	assert.Contains(t, err.Error(), "--upstream-url ($PROXIE_UPSTREAM_URL): must be an absolute")
 	assert.NotContains(t, err.Error(), "is not set")
+}
+
+func TestLoadFlagsOverrideEnv(t *testing.T) {
+	cfg, err := load(t, map[string]string{"PROXIE_ADDR": ":8081", "PROXIE_LOG_FORMAT": "text"}, nil,
+		"--addr", ":9000", "--cache-ttl", "5m", "--log-format", "json", "--key-headers", "X-A,x-b")
+	require.NoError(t, err)
+
+	assert.Equal(t, ":9000", cfg.Addr)
+	assert.Equal(t, 5*time.Minute, cfg.CacheTTL)
+	assert.Equal(t, "json", cfg.Log.Format)
+	assert.Equal(t, []string{"x-a", "x-b"}, cfg.KeyHeaders)
+}
+
+func TestLoadFromFlagsOnly(t *testing.T) {
+	cfg, err := load(t, nil, []string{"PROXIE_UPSTREAM_URL", "PROXIE_REDIS_URL"},
+		"--upstream-url", "https://flag.example.com", "--redis-url", "redis://flag:6379")
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://flag.example.com", cfg.Tenants["acme"].UpstreamURL.String())
+	assert.Equal(t, "redis://flag:6379", cfg.RedisURL.String())
+}
+
+func TestLoadParseErrorNamesEnvVar(t *testing.T) {
+	_, err := load(t, map[string]string{"PROXIE_CACHE_TTL": "soon"}, nil)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "PROXIE_CACHE_TTL")
+}
+
+func TestLoadInvalidURLFlagHidesPassword(t *testing.T) {
+	_, err := load(t, nil, nil, "--redis-url", "redis://:s3cret@host:bad port")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--redis-url ($PROXIE_REDIS_URL): not a valid URL")
+	assert.NotContains(t, err.Error(), "s3cret")
 }
