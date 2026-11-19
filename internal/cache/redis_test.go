@@ -222,4 +222,19 @@ func TestRedisReal(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Equal(t, []byte("v"), got)
+
+	// compose.yaml runs Redis with the eviction policy proxie needs.
+	policy, err := s.MaxMemoryPolicy(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "allkeys-lru", policy)
+}
+
+func TestRedisMaxMemoryPolicyUnsupported(t *testing.T) {
+	// miniredis has no CONFIG command, like managed Redis services that
+	// block it.
+	mr := miniredis.RunT(t)
+	s := newRedis(t, cache.RedisOptions{URL: redisURL(t, "redis://"+mr.Addr())})
+
+	_, err := s.MaxMemoryPolicy(t.Context())
+	require.Error(t, err)
 }
