@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/schmenniooo/proxie/internal/cache"
@@ -17,12 +19,12 @@ import (
 type ServeCmd struct{}
 
 // Run starts the server with logging and graceful shutdown.
-func (ServeCmd) Run(ctx context.Context, cfg *config.Config, s *streams) error {
-	if err := cfg.Complete(s.environ); err != nil {
+func (ServeCmd) Run(ctx context.Context, cfg *config.Config, stdout io.Writer) error {
+	if err := cfg.Complete(os.Environ()); err != nil {
 		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 
-	logger, logFile, err := logging.New(cfg.Log, s.stdout)
+	logger, logFile, err := logging.New(cfg.Log, stdout)
 	if err != nil {
 		return err
 	}

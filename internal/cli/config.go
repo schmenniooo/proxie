@@ -3,7 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -17,17 +19,17 @@ type ConfigCmd struct {
 
 // Run prints the config through Config.LogValue, so secrets are masked
 // exactly as in the startup log line.
-func (c *ConfigCmd) Run(cfg *config.Config, s *streams) error {
-	if err := cfg.Complete(s.environ); err != nil {
+func (c *ConfigCmd) Run(cfg *config.Config, stdout io.Writer) error {
+	if err := cfg.Complete(os.Environ()); err != nil {
 		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 	v := cfg.LogValue()
 	if c.JSON {
-		enc := json.NewEncoder(s.stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(toJSON(v))
 	}
-	tw := tabwriter.NewWriter(s.stdout, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	writeText(tw, "", v)
 	return tw.Flush()
 }

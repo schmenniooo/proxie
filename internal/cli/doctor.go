@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"io"
+	"os"
 
 	"github.com/schmenniooo/proxie/internal/config"
 	"github.com/schmenniooo/proxie/internal/doctor"
@@ -14,17 +16,17 @@ type DoctorCmd struct {
 
 // Run runs the checks and fails when any check fails. An invalid config is
 // a failed check, not an error.
-func (d *DoctorCmd) Run(ctx context.Context, cfg *config.Config, s *streams) error {
-	err := cfg.Complete(s.environ)
-	return d.report(s, doctor.Run(ctx, *cfg, err))
+func (d *DoctorCmd) Run(ctx context.Context, cfg *config.Config, stdout io.Writer) error {
+	err := cfg.Complete(os.Environ())
+	return d.report(stdout, doctor.Run(ctx, *cfg, err))
 }
 
-func (d *DoctorCmd) report(s *streams, results []doctor.Result) error {
+func (d *DoctorCmd) report(stdout io.Writer, results []doctor.Result) error {
 	write := doctor.WriteTable
 	if d.JSON {
 		write = doctor.WriteJSON
 	}
-	if err := write(s.stdout, results); err != nil {
+	if err := write(stdout, results); err != nil {
 		return err
 	}
 	if doctor.Failed(results) {

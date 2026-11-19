@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"runtime/debug"
 )
 
@@ -17,8 +18,8 @@ var (
 type VersionCmd struct{}
 
 // Run prints "proxie <version> (commit <commit>)".
-func (VersionCmd) Run(s *streams) error {
-	_, err := fmt.Fprintf(s.stdout, "proxie %s (commit %s)\n", version, buildCommit())
+func (VersionCmd) Run(stdout io.Writer) error {
+	_, err := fmt.Fprintf(stdout, "%s %s (commit %s)\n", name, version, buildCommit())
 	return err
 }
 

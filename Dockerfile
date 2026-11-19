@@ -13,5 +13,6 @@ RUN CGO_ENABLED=0 go build -trimpath \
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /proxie /proxie
 EXPOSE 8080
-# Without a command proxie runs the proxy (`proxie serve`).
+# The CLI is the entrypoint: `docker run <image> doctor` runs another command.
 ENTRYPOINT ["/proxie"]
+CMD ["serve"]

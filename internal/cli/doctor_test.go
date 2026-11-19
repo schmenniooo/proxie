@@ -46,11 +46,11 @@ func TestDoctorJSON(t *testing.T) {
 	assert.Equal(t, 1, code, "the upstream check fails")
 	var results []doctor.Result
 	require.NoError(t, json.Unmarshal([]byte(stdout), &results))
-	checks := map[string]doctor.Status{}
+	checks := map[string]string{}
 	for _, r := range results {
 		checks[r.Check] = r.Status
 	}
-	assert.Equal(t, map[string]doctor.Status{
+	assert.Equal(t, map[string]string{
 		"config":                      doctor.Pass,
 		"redis":                       doctor.Pass,
 		"redis maxmemory-policy":      doctor.Warn,

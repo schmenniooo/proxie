@@ -29,20 +29,18 @@ const upstreamTimeout = 10 * time.Second
 // wantPolicy is the Redis eviction policy proxie needs (see docs/design.md).
 const wantPolicy = "allkeys-lru"
 
-// Status is the outcome of a check.
-type Status string
-
+// Outcomes of a check, in Result.Status.
 const (
-	Pass Status = "pass"
-	Warn Status = "warn"
-	Fail Status = "fail"
+	Pass = "pass"
+	Warn = "warn"
+	Fail = "fail"
 )
 
 // Result is the outcome of one check. Detail never holds secrets, prompts,
 // bodies or keys.
 type Result struct {
 	Check  string `json:"check"`
-	Status Status `json:"status"`
+	Status string `json:"status"` // Pass, Warn or Fail
 	Detail string `json:"detail,omitempty"`
 }
 

@@ -39,7 +39,12 @@ services:
       retries: 10
 
   proxie:
-    build: .
+    build:
+      context: .
+      # Set by the Taskfile from git, shown by `proxie version`.
+      args:
+        VERSION: ${PROXIE_VERSION:-dev}
+        COMMIT: ${PROXIE_COMMIT:-unknown}
     ports:
       - "${PROXIE_PORT:-8080}:8080"
     env_file:
