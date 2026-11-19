@@ -34,8 +34,9 @@ proxie version
 and, when `PROXIE_LOG_FILE` is set, that the log file is writable. Each check
 ends in `pass`, `warn` or `fail`.
 
-Locally, `task build` puts the CLI into `bin/proxie`, and `task cli -- doctor`
-runs a command inside the compose setup next to its Redis.
+For local development, run commands through Task only, for example
+`task cli -- doctor` or `task cli -- --help`. They run in the compose setup
+next to its Redis; no proxie binary is built on the host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is
 distroless (no shell), so run the commands directly:

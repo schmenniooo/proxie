@@ -10,7 +10,6 @@ vars:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
   COMMIT:
     sh: git rev-parse HEAD 2>/dev/null || echo unknown
-  LDFLAGS: -s -w -X github.com/schmenniooo/proxie/internal/cli.version={{.VERSION}} -X github.com/schmenniooo/proxie/internal/cli.commit={{.COMMIT}}
 
 env:
   # Build args of the proxie image (compose.yaml).
@@ -25,16 +24,13 @@ tasks:
     silent: true
 
   build:
-    desc: Build the proxie CLI for this machine into bin/proxie (try bin/proxie --help)
-    cmds:
-      - "{{.GO}} env GOOS={{OS}} GOARCH={{ARCH}} CGO_ENABLED=0 go build -trimpath -ldflags='{{.LDFLAGS}}' -o bin/proxie ./cmd/proxie"
-
-  image:
     desc: Build the proxie Docker image
     cmds:
       - docker compose build proxie
 
   cli:
+    # Development runs the CLI only in Docker, never as a host binary, so it
+    # cannot be confused with an installed proxie.
     desc: Run a proxie command in the compose setup (env from .env), e.g. task cli -- doctor
     cmds:
       - COMPOSE_PROGRESS=quiet docker compose run --rm --build proxie {{.CLI_ARGS}}

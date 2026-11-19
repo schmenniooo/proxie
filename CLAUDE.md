@@ -12,8 +12,7 @@ Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go tool
 
 ```
 task                                          # list tasks
-task build                                    # proxie CLI for this machine into bin/proxie
-task image                                    # proxie Docker image
+task build                                    # proxie Docker image
 task cli -- doctor                            # any proxie command in the compose setup (proxie + Redis)
 task run                                      # proxie + Redis via compose, env from .env (copy .env.example)
 task down                                     # stop the compose containers
