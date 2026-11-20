@@ -383,3 +383,20 @@ func TestLoadInvalidURLFlagHidesPassword(t *testing.T) {
 	assert.Contains(t, err.Error(), "--redis-url ($PROXIE_REDIS_URL): not a valid URL")
 	assert.NotContains(t, err.Error(), "s3cret")
 }
+
+// Proxie keys must never be settable on the command line: argv shows up in
+// the process list. Guard against a future flag or env-backed field for them.
+func TestAPIKeysAreNotFlags(t *testing.T) {
+	var cfg config.Config
+	parser, err := kong.New(&cfg)
+	require.NoError(t, err)
+
+	for _, group := range parser.Model.AllFlags(false) {
+		for _, f := range group {
+			assert.NotContains(t, strings.ToLower(f.Name), "api-key", "flag --%s", f.Name)
+			for _, env := range f.Envs {
+				assert.False(t, strings.HasPrefix(env, "PROXIE_API_KEY"), "flag --%s reads $%s", f.Name, env)
+			}
+		}
+	}
+}

@@ -44,8 +44,13 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 - Key lookup: at startup every key is hashed with SHA-256 into a map from
   hash to tenant. A request hashes its `X-Proxie-Key` once and looks the hash
   up, so the cost does not grow with the number of keys and the raw key is
-  never compared. A missing or unknown key gets `401`. Building the map also
-  catches keys shared between tenants.
+  never compared. A missing, unknown or repeated `X-Proxie-Key` gets `401`.
+  Building the map also catches keys shared between tenants.
+- Every route on the proxy port needs a key, unknown paths included, so
+  callers without a key learn nothing about the routes. `/healthz` lives on
+  the admin port and stays open.
+- Keys are only ever read from the environment. There is no flag and no
+  global key: every caller authenticates as a tenant.
 - One upstream URL per tenant: `PROXIE_UPSTREAM_URL_<TENANT>=<url>`, same
   suffix rules as the keys. Without it the tenant uses `PROXIE_UPSTREAM_URL`.
   - Per tenant, not per key: a tenant is the unit of isolation and caching.
@@ -262,7 +267,7 @@ milestone is done in the pull request that is linked or currently open.
 - [x] 1. Config, structured logging, graceful shutdown
 - [x] 2. `Cache` interface and Redis implementation (timeouts, fail open)
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
-- [ ] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
+- [x] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
   and `PROXIE_UPSTREAM_URL_<TENANT>` is done in config)
 - [ ] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
 - [ ] 6. Cache layer: hit/miss, TTL, `X-Proxie-Cache`, bypass, 2xx only
