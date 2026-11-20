@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/schmenniooo/proxie/internal/auth"
 	"github.com/schmenniooo/proxie/internal/cache"
 	"github.com/schmenniooo/proxie/internal/config"
 	"github.com/schmenniooo/proxie/internal/logging"
@@ -21,6 +22,11 @@ type ServeCmd struct{}
 // Run starts the server with logging and graceful shutdown.
 func (ServeCmd) Run(ctx context.Context, cfg *config.Config, stdout io.Writer) error {
 	if err := cfg.Complete(os.Environ()); err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+
+	authenticator, err := auth.New(cfg.Tenants)
+	if err != nil {
 		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 
@@ -57,7 +63,7 @@ func (ServeCmd) Run(ctx context.Context, cfg *config.Config, stdout io.Writer) e
 	}
 	logger.Info("listening", slog.String("addr", ln.Addr().String()))
 
-	if err := server.Run(ctx, ln, server.New(logger), logger, cfg.ShutdownTimeout); err != nil {
+	if err := server.Run(ctx, ln, server.New(logger, authenticator), logger, cfg.ShutdownTimeout); err != nil {
 		logger.Error("server stopped with error", slog.Any("error", err))
 		return exitCode(1)
 	}

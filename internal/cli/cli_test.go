@@ -81,3 +81,28 @@ func TestRunUnparsableEnvIsAUsageError(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "PROXIE_CACHE_TTL")
 }
+
+func TestRunRejectsAPIKeyFlags(t *testing.T) {
+	setEnv(t, validEnv("localhost:6379"))
+
+	for _, args := range [][]string{
+		{"--api-key-acme=flagsecret", "config"},
+		{"--api-key", "flagsecret", "config"},
+		{"config", "--api-key-acme", "flagsecret"},
+	} {
+		code, stdout, stderr := run(t.Context(), args...)
+
+		assert.Equal(t, 2, code, args)
+		assert.Contains(t, stderr, "unknown flag --api-key", args)
+		assert.NotContains(t, stdout+stderr, "flagsecret", args)
+	}
+}
+
+func TestRunHelpListsNoAPIKeyFlag(t *testing.T) {
+	setEnv(t, nil)
+
+	_, stdout, _ := run(t.Context(), "--help")
+
+	assert.NotContains(t, stdout, "--api-key")
+	assert.Contains(t, stdout, "PROXIE_API_KEY_<TENANT>")
+}

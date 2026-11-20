@@ -6,24 +6,23 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/schmenniooo/proxie/internal/server"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestHelloRouteIsRegistered(t *testing.T) {
 	w := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/hello", nil)
+	req := newRequest(t, http.MethodGet, "/hello")
 
-	server.New(slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
+	newServer(t, slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestHelloRouteRejectsPost(t *testing.T) {
 	w := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/hello", nil)
+	req := newRequest(t, http.MethodPost, "/hello")
 
-	server.New(slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
+	newServer(t, slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
