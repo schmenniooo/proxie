@@ -259,7 +259,10 @@ func TestForwardReturnsUpstreamStatusAndBody(t *testing.T) {
 }
 
 func TestForwardRejectsDotSegments(t *testing.T) {
-	for _, target := range []string{"/v1/../admin", "/v1/%2e%2e/admin", "/v1/a%2F..%2Fb", "/.."} {
+	for _, target := range []string{
+		"/v1/../admin", "/v1/%2e%2e/admin", "/v1/a%2F..%2Fb", "/..",
+		"/v1/..;/admin", "/v1/.;x/admin", "/v1/./x", "/v1/..%5Cadmin", "/v1/a%5Cb",
+	} {
 		t.Run(target, func(t *testing.T) {
 			srv, got := recordingUpstream(t)
 			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
@@ -269,6 +272,20 @@ func TestForwardRejectsDotSegments(t *testing.T) {
 
 			require.ErrorIs(t, err, proxy.ErrInvalidPath)
 			assert.Empty(t, *got)
+		})
+	}
+}
+
+func TestForwardAllowsDotsInsideSegments(t *testing.T) {
+	for _, target := range []string{"/v1/a..b", "/v1/file.json", "/v1/.well-known/x", "/v1/a;b"} {
+		t.Run(target, func(t *testing.T) {
+			srv, got := recordingUpstream(t)
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+
+			forward(t, newForwarder(), tenantFor(t, srv.URL), r)
+
+			require.Len(t, *got, 1)
+			assert.Equal(t, target, (*got)[0].requestURI)
 		})
 	}
 }

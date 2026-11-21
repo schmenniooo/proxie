@@ -68,6 +68,11 @@ Caching, `X-Proxie-Cache`, coalescing, streaming timeouts, metrics, retries.
 **Response and errors (handler in `internal/server`)**
 
 - Status, headers (minus hop-by-hop) and body are copied to the caller.
+- A path with a `.` or `..` segment (also `..;`) or a backslash: `400`, not
+  forwarded, so it cannot step out of the upstream base path. Added after a
+  security review.
+- Caller gone before the upstream answered: nothing reaches the caller; the
+  access log records `499`.
 - Timeout: `504` with `{"error": "upstream timeout"}`. Caller gone: nothing is
   written. Other errors: `502` with `{"error": "upstream unavailable"}`.
   Errors are logged at warn with tenant, without the URL.

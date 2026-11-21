@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -167,4 +168,36 @@ func TestProxyTimeoutMidBodyBreaksConnection(t *testing.T) {
 	}
 
 	assert.Error(t, err)
+}
+
+func TestProxyPassesEmptyUpstream404(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusNotFound)
+	})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			w := httptest.NewRecorder()
+
+			newServerWithUpstream(t, discard(), upstream, defaultTimeout, defaultMaxRequestBytes).
+				ServeHTTP(w, newRequest(t, method, "/v1/missing"))
+
+			assert.Equal(t, http.StatusNotFound, w.Code)
+			assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+			assert.Empty(t, w.Body.String())
+		})
+	}
+}
+
+func TestProxyCallerGoneLogs499(t *testing.T) {
+	logger, buf := bufferLogger()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := newRequest(t, http.MethodPost, "/v1/messages").WithContext(ctx)
+
+	newServer(t, logger).ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Contains(t, buf.String(), `"status":499`)
+	assert.NotContains(t, buf.String(), `"status":404`)
 }

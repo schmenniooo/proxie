@@ -12,6 +12,10 @@ import (
 
 // Handlers are the starting point of business logic.
 
+// statusClientClosedRequest is nginx's non-standard status for a caller
+// that hung up before the response was ready.
+const statusClientClosedRequest = 499
+
 // proxyHandler forwards the request to the tenant's upstream and copies the
 // response back. Upstream failures become 502, upstream timeouts 504. Errors
 // are logged without the URL, headers or body.
@@ -36,8 +40,9 @@ func proxyHandler(logger *slog.Logger, fwd *proxy.Forwarder, maxRequestBytes int
 			case errors.Is(err, proxy.ErrInvalidPath):
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid request path"})
 			case ctx.Err() != nil:
-				// The caller is gone; there is no one to answer.
-				c.Abort()
+				// The caller is gone; nothing reaches them. The status
+				// only keeps the access log truthful (Gin would log 404).
+				c.AbortWithStatus(statusClientClosedRequest)
 			case errors.Is(err, context.DeadlineExceeded):
 				logUpstreamError(c, logger, tenant.Name, err)
 				c.AbortWithStatusJSON(http.StatusGatewayTimeout, gin.H{"error": "upstream timeout"})
@@ -58,6 +63,10 @@ func proxyHandler(logger *slog.Logger, fwd *proxy.Forwarder, maxRequestBytes int
 			// complete.
 			panic(http.ErrAbortHandler)
 		}
+		// Gin writes the status lazily, on the first body byte. Commit it
+		// now, or Gin replaces an empty upstream 404 with its own NoRoute
+		// body.
+		c.Writer.WriteHeaderNow()
 	}
 }
 

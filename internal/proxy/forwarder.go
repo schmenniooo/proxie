@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -32,9 +31,11 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-// ErrInvalidPath means the request path contains a ".." segment, which
-// could step out of the upstream base path. Such requests are not sent.
-var ErrInvalidPath = errors.New("request path must not contain .. segments")
+// ErrInvalidPath means the request path contains a "." or ".." segment
+// (also with ";" parameters, like "..;") or a backslash. Upstream servers
+// may resolve those to a path outside the upstream base path, so such
+// requests are not sent.
+var ErrInvalidPath = errors.New("request path must not contain dot segments or backslashes")
 
 // Options configures a Forwarder.
 type Options struct {
@@ -76,8 +77,7 @@ func (f *Forwarder) Forward(ctx context.Context, tenant config.Tenant, r *http.R
 	if tenant.UpstreamURL == nil {
 		return nil, fmt.Errorf("tenant %q has no upstream URL", tenant.Name)
 	}
-	// Checked on the decoded path, so %2e%2e and %2F are caught as well.
-	if slices.Contains(strings.Split(r.URL.Path, "/"), "..") {
+	if !safePath(r.URL.Path) {
 		return nil, ErrInvalidPath
 	}
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
@@ -116,6 +116,21 @@ func upstreamURL(base, req *url.URL) *url.URL {
 	u.RawQuery = strings.Join(query, "&")
 	u.Fragment, u.RawFragment = "", ""
 	return &u
+}
+
+// safePath reports whether path, the decoded request path (so %2e, %2F and
+// %5C are already resolved), holds no dot segment and no backslash.
+func safePath(path string) bool {
+	if strings.Contains(path, `\`) {
+		return false
+	}
+	for seg := range strings.SplitSeq(path, "/") {
+		seg, _, _ = strings.Cut(seg, ";")
+		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 // RemoveHopHeaders deletes the hop-by-hop headers from h, including the
