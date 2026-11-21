@@ -24,7 +24,7 @@ func bufferLogger() (*slog.Logger, *bytes.Buffer) {
 func TestAccessLogFields(t *testing.T) {
 	logger, buf := bufferLogger()
 	w := httptest.NewRecorder()
-	req := newRequest(t, http.MethodGet, "/hello")
+	req := newRequest(t, http.MethodGet, "/v1/x")
 
 	newServer(t, logger).ServeHTTP(w, req)
 
@@ -33,7 +33,7 @@ func TestAccessLogFields(t *testing.T) {
 	assert.Equal(t, "INFO", line["level"])
 	assert.Equal(t, "request", line["msg"])
 	assert.Equal(t, "GET", line["method"])
-	assert.Equal(t, "/hello", line["path"])
+	assert.Equal(t, "/v1/x", line["path"])
 	assert.InDelta(t, http.StatusOK, line["status"], 0)
 	assert.Contains(t, line, "latency_ms")
 	assert.InDelta(t, w.Body.Len(), line["bytes"], 0)
@@ -52,7 +52,7 @@ func TestAccessLogLevelFollowsStatus(t *testing.T) {
 func TestAccessLogCountsNotFoundBytes(t *testing.T) {
 	logger, buf := bufferLogger()
 	w := httptest.NewRecorder()
-	req := newRequest(t, http.MethodPost, "/hello")
+	req := newRequest(t, http.MethodGet, "/nope")
 
 	newServer(t, logger).ServeHTTP(w, req)
 
@@ -66,7 +66,7 @@ func TestAccessLogCountsNotFoundBytes(t *testing.T) {
 func TestAccessLogOmitsQueryAndHeaders(t *testing.T) {
 	logger, buf := bufferLogger()
 	w := httptest.NewRecorder()
-	req := newRequest(t, http.MethodGet, "/hello?key=querysecret")
+	req := newRequest(t, http.MethodGet, "/v1/x?key=querysecret")
 	req.Header.Set("Authorization", "Bearer authsecret")
 	req.Header.Set("X-Api-Key", "apisecret")
 	req.Header.Set("X-Proxie-Key", "proxiesecret")
@@ -117,7 +117,7 @@ func TestRequireProxieKeyRejects(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			logger, buf := bufferLogger()
 			w := httptest.NewRecorder()
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/hello", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/x", nil)
 			for _, k := range keys {
 				req.Header.Add(auth.Header, k)
 			}

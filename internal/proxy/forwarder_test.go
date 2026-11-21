@@ -257,3 +257,18 @@ func TestForwardReturnsUpstreamStatusAndBody(t *testing.T) {
 	assert.Equal(t, http.StatusTeapot, status)
 	assert.Equal(t, "teapot", body)
 }
+
+func TestForwardRejectsDotSegments(t *testing.T) {
+	for _, target := range []string{"/v1/../admin", "/v1/%2e%2e/admin", "/v1/a%2F..%2Fb", "/.."} {
+		t.Run(target, func(t *testing.T) {
+			srv, got := recordingUpstream(t)
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+			r.URL, _ = url.ParseRequestURI(target)
+
+			err := forwardErr(r.Context(), newForwarder(), tenantFor(t, srv.URL+"/base"), r)
+
+			require.ErrorIs(t, err, proxy.ErrInvalidPath)
+			assert.Empty(t, *got)
+		})
+	}
+}

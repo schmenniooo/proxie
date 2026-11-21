@@ -46,7 +46,7 @@ tasks:
       - docker compose down
 
   test:
-    desc: Run all tests (pass a package or flags after --, e.g. task test -- -run TestHello ./internal/server)
+    desc: Run all tests (pass a package or flags after --, e.g. task test -- -run TestProxyForwardsRequest ./internal/server)
     cmds:
       - "{{.GO}} go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}"
 

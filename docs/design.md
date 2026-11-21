@@ -269,7 +269,7 @@ milestone is done in the pull request that is linked or currently open.
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
 - [x] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
   and `PROXIE_UPSTREAM_URL_<TENANT>` is done in config)
-- [ ] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
+- [x] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
 - [ ] 6. Cache layer: hit/miss, TTL, `X-Proxie-Cache`, bypass, 2xx only
 - [ ] 7. Coalescing for non-streaming requests
 - [ ] 8. Metrics and health endpoints on the admin port

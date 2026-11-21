@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,10 @@ var hopHeaders = []string{
 	"Transfer-Encoding",
 	"Upgrade",
 }
+
+// ErrInvalidPath means the request path contains a ".." segment, which
+// could step out of the upstream base path. Such requests are not sent.
+var ErrInvalidPath = errors.New("request path must not contain .. segments")
 
 // Options configures a Forwarder.
 type Options struct {
@@ -70,6 +75,10 @@ func New(opts Options) *Forwarder {
 func (f *Forwarder) Forward(ctx context.Context, tenant config.Tenant, r *http.Request) (*http.Response, error) {
 	if tenant.UpstreamURL == nil {
 		return nil, fmt.Errorf("tenant %q has no upstream URL", tenant.Name)
+	}
+	// Checked on the decoded path, so %2e%2e and %2F are caught as well.
+	if slices.Contains(strings.Split(r.URL.Path, "/"), "..") {
+		return nil, ErrInvalidPath
 	}
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 
