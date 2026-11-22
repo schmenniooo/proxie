@@ -44,11 +44,11 @@ For local development, run commands through Task only. Start the stack with
 running proxie container, with its env and next to its Redis, for example
 `task cli -- proxie doctor` or `task cli -- proxie --help`. The image is
 distroless, so `proxie` (on `PATH`) is the only executable (no shell).
-`task request` sends a test Anthropic Messages request through the running
-proxie. It uses the first key of the first `PROXIE_API_KEY_<TENANT>` in `.env`
-(or `TENANT=<name>`) and `ANTHROPIC_API_KEY` from your shell; keep that key out
-of `.env`, which is passed into the proxie container. `ENDPOINT` and `BODY`
-override the request. `serve` already
+`task request` sends one test request through the running proxie, built only
+from the `TEST_*` values in the "Local testing" section of `.env` (proxie key,
+provider key, endpoint, body; see `.env.example`). proxie ignores them, but
+compose passes `.env` into its container too, so use a provider key meant for
+testing. `serve` already
 runs via `task run`. No proxie binary is built on the host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is

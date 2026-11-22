@@ -28,11 +28,14 @@ services:
     <<: *go-tool
     image: golangci/golangci-lint:v2.15.0
 
-  # Sends test requests to proxie from inside the compose network
-  # (task request).
+  # Sends a test request to proxie from inside the compose network
+  # (task request), built from the TEST_* values in .env.
   curl:
     image: curlimages/curl:8.11.1
     profiles: [tools]
+    env_file:
+      - path: .env
+        required: false
     entrypoint: ["sh", "-c"]
 
   redis:
