@@ -11,9 +11,18 @@ overridden by a flag; see the
 `PROXIE_REDIS_URL` and at least one `PROXIE_API_KEY_<TENANT>` are required,
 plus an upstream URL for every tenant (`PROXIE_UPSTREAM_URL` as the default).
 
-Local development only needs Docker and [Task](https://taskfile.dev). Copy
-`.env.example` to `.env`, then `task run` starts proxie and Redis with Docker
-Compose on port 8080 in the background (`task down` stops them). Point an
+Local development only needs Docker and [Task](https://taskfile.dev). It uses
+two env files, each with a committed example that explains it:
+
+- `.env.proxie` (copy `.env.proxie.example`): proxie's own settings, loaded
+  into the proxie container. No provider keys: proxie never holds them.
+- `.env.test` (copy `.env.test.example`): the values for `task request`,
+  including a provider key. Only the curl test container loads it, so that key
+  never reaches the proxie container.
+
+Both are gitignored and kept out of the Docker build. `task run` starts proxie
+and Redis with Docker Compose on port 8080 in the background (`task down`
+stops them). Point an
 SDK at `http://localhost:8080/v1/upstream`; everything after that prefix is
 forwarded to the tenant's upstream. `task test` and `task lint` run
 in containers too.
@@ -45,11 +54,9 @@ running proxie container, with its env and next to its Redis, for example
 `task cli -- proxie doctor` or `task cli -- proxie --help`. The image is
 distroless, so `proxie` (on `PATH`) is the only executable (no shell).
 `task request` sends one test request through the running proxie, built only
-from the `TEST_*` values in the "Local testing" section of `.env` (proxie key,
-provider key, endpoint, body; see `.env.example`). proxie ignores them, but
-compose passes `.env` into its container too, so use a provider key meant for
-testing. `serve` already
-runs via `task run`. No proxie binary is built on the host.
+from the `TEST_*` values in `.env.test` (proxie key, provider key, endpoint,
+body). `serve` already runs via `task run`. No proxie binary is built on the
+host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is
 distroless (no shell), so run the commands directly:

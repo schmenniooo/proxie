@@ -301,6 +301,12 @@ exactly one `_test.go` next to it.
 
 - Multi-stage Dockerfile. Docker Compose (`compose.yaml`) runs tests, lint and a
   local proxie with Redis, so development needs only Docker and Task.
+- Local settings live in two gitignored env files, each with a committed
+  example: `.env.proxie` (proxie's own settings, loaded into the proxie
+  container) and `.env.test` (values for `task request`, including a provider
+  key, loaded only by the curl test container). Keeping them apart means the
+  local proxie never holds a provider key, matching production, where callers
+  send their own. Both are excluded from the Docker build context.
 - GitHub Actions: tests on pull requests. On a version tag created from `main`
   the image is built and pushed to the GitHub container registry (ghcr.io).
 - Work happens on branches and pull requests.

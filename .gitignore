@@ -25,8 +25,9 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
-.env
+# Local env files (.env.proxie, .env.test); only the examples are committed.
+.env*
+!.env*.example
 
 # Editor/IDE
 # .idea/

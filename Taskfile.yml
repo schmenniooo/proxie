@@ -11,6 +11,11 @@ vars:
   COMMIT:
     sh: git rev-parse HEAD 2>/dev/null || echo unknown
 
+# proxie's local settings; also fills in compose.yaml (PROXIE_PORT). A missing
+# file is fine. .env.test is deliberately not loaded here: only the curl
+# container reads it (task request).
+dotenv: [".env.proxie"]
+
 env:
   # Build args of the proxie image (compose.yaml).
   PROXIE_VERSION: "{{.VERSION}}"
@@ -40,19 +45,19 @@ tasks:
       - docker compose exec proxie {{.CLI_ARGS}}
 
   run:
-    desc: Run proxie and Redis (env vars from .env, copy .env.example)
+    desc: Run proxie and Redis in the background (settings from .env.proxie, copy .env.proxie.example)
     cmds:
       - docker compose up --build -d proxie
 
   request:
     desc: >-
       Send a test request through the running proxie (task run first), built
-      from the TEST_* values in .env (see .env.example)
+      from the TEST_* values in .env.test (copy .env.test.example)
     cmds:
       - >-
         COMPOSE_PROGRESS=quiet docker compose run --rm curl '
         for v in TEST_PROXIE_KEY TEST_PROVIDER_KEY TEST_ENDPOINT TEST_BODY; do
-        eval "[ -n \"\$$v\" ]" || { echo "$v is not set in .env (see .env.example)" >&2; exit 1; };
+        eval "[ -n \"\$$v\" ]" || { echo "$v is not set in .env.test (see .env.test.example)" >&2; exit 1; };
         done;
         curl -sS -i -X POST "http://proxie:8080/v1/upstream$TEST_ENDPOINT"
         -H "X-Proxie-Key: $TEST_PROXIE_KEY"
