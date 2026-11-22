@@ -4,9 +4,9 @@ import "github.com/gin-gonic/gin"
 
 // upstreamPrefix is where the proxy lives. Everything after it is forwarded
 // to the tenant's upstream, so a caller sets its SDK base URL to
-// http://<proxie>/upstream/v1. The version leaves room for a v2 and keeps
-// other paths free for proxie's own routes.
-const upstreamPrefix = "/upstream/v1"
+// http://<proxie>/v1/upstream. The version comes first, so later routes of
+// proxie's own API sit next to it under /v1 (and a /v2 can follow).
+const upstreamPrefix = "/v1/upstream"
 
 // registerRoutes maps endpoints to handlers.
 func registerRoutes(r *gin.Engine, proxy gin.HandlerFunc) {

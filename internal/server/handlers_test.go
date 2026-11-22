@@ -50,7 +50,7 @@ func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 func TestProxyForwardsRequest(t *testing.T) {
 	var c captured
 	w := httptest.NewRecorder()
-	req := newBodyRequest(t, http.MethodPost, "/upstream/v1/v1/messages?x=1", `{"model":"m"}`)
+	req := newBodyRequest(t, http.MethodPost, "/v1/upstream/v1/messages?x=1", `{"model":"m"}`)
 	req.Header.Set("Authorization", "Bearer provider-key")
 
 	newServerWithUpstream(t, discard(), c.handler(http.StatusCreated, `{"id":"1"}`), defaultTimeout, defaultMaxRequestBytes).
@@ -73,7 +73,7 @@ func TestProxyPassesUpstreamErrors(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	newServerWithUpstream(t, discard(), c.handler(http.StatusTooManyRequests, `{"error":"slow down"}`), defaultTimeout, defaultMaxRequestBytes).
-		ServeHTTP(w, newRequest(t, http.MethodPost, "/upstream/v1/v1/messages"))
+		ServeHTTP(w, newRequest(t, http.MethodPost, "/v1/upstream/v1/messages"))
 
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 	assert.JSONEq(t, `{"error":"slow down"}`, w.Body.String())
@@ -85,7 +85,7 @@ func TestProxyForwardsOversizeBody(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	newServerWithUpstream(t, discard(), c.handler(http.StatusOK, "{}"), defaultTimeout, 10).
-		ServeHTTP(w, newBodyRequest(t, http.MethodPost, "/upstream/v1/v1/messages", body))
+		ServeHTTP(w, newBodyRequest(t, http.MethodPost, "/v1/upstream/v1/messages", body))
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	c.mu.Lock()
@@ -98,7 +98,7 @@ func TestProxyRejectsDotSegments(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	newServerWithUpstream(t, discard(), c.handler(http.StatusOK, "{}"), defaultTimeout, defaultMaxRequestBytes).
-		ServeHTTP(w, newRequest(t, http.MethodGet, "/upstream/v1/%2e%2e/admin"))
+		ServeHTTP(w, newRequest(t, http.MethodGet, "/v1/upstream/%2e%2e/admin"))
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.JSONEq(t, `{"error":"invalid request path"}`, w.Body.String())
@@ -130,7 +130,7 @@ func TestProxyUpstreamTimeoutReturns504(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	newServerWithUpstream(t, discard(), sleepyUpstream(t, false), 50*time.Millisecond, defaultMaxRequestBytes).
-		ServeHTTP(w, newRequest(t, http.MethodPost, "/upstream/v1/v1/messages"))
+		ServeHTTP(w, newRequest(t, http.MethodPost, "/v1/upstream/v1/messages"))
 
 	assert.Equal(t, http.StatusGatewayTimeout, w.Code)
 	assert.JSONEq(t, `{"error":"upstream timeout"}`, w.Body.String())
@@ -141,7 +141,7 @@ func TestProxyUpstreamDownReturns502(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	newServerWithURL(t, logger, "http://127.0.0.1:1/?key=s3cret", defaultTimeout, defaultMaxRequestBytes).
-		ServeHTTP(w, newRequest(t, http.MethodPost, "/upstream/v1/v1/messages"))
+		ServeHTTP(w, newRequest(t, http.MethodPost, "/v1/upstream/v1/messages"))
 
 	assert.Equal(t, http.StatusBadGateway, w.Code)
 	assert.JSONEq(t, `{"error":"upstream unavailable"}`, w.Body.String())
@@ -154,7 +154,7 @@ func TestProxyTimeoutMidBodyBreaksConnection(t *testing.T) {
 	engine := newServerWithUpstream(t, discard(), sleepyUpstream(t, true), 50*time.Millisecond, defaultMaxRequestBytes)
 	proxie := httptest.NewServer(engine)
 	t.Cleanup(proxie.Close)
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, proxie.URL+"/upstream/v1/v1/x", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, proxie.URL+"/v1/upstream/v1/x", nil)
 	require.NoError(t, err)
 	req.Header.Set(auth.Header, testKey)
 
@@ -181,7 +181,7 @@ func TestProxyPassesEmptyUpstream404(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			newServerWithUpstream(t, discard(), upstream, defaultTimeout, defaultMaxRequestBytes).
-				ServeHTTP(w, newRequest(t, method, "/upstream/v1/v1/missing"))
+				ServeHTTP(w, newRequest(t, method, "/v1/upstream/v1/missing"))
 
 			assert.Equal(t, http.StatusNotFound, w.Code)
 			assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
@@ -194,7 +194,7 @@ func TestProxyCallerGoneLogs408(t *testing.T) {
 	logger, buf := bufferLogger()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	req := newRequest(t, http.MethodPost, "/upstream/v1/v1/messages").WithContext(ctx)
+	req := newRequest(t, http.MethodPost, "/v1/upstream/v1/messages").WithContext(ctx)
 
 	newServer(t, logger).ServeHTTP(httptest.NewRecorder(), req)
 
@@ -214,7 +214,7 @@ func TestProxyStripsPrefixAndKeepsEncoding(t *testing.T) {
 	})
 
 	newServerWithUpstream(t, discard(), upstream, defaultTimeout, defaultMaxRequestBytes).
-		ServeHTTP(httptest.NewRecorder(), newRequest(t, http.MethodGet, "/upstream/v1/files/a%2Fb?x=1"))
+		ServeHTTP(httptest.NewRecorder(), newRequest(t, http.MethodGet, "/v1/upstream/files/a%2Fb?x=1"))
 
 	mu.Lock()
 	defer mu.Unlock()

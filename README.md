@@ -14,7 +14,7 @@ plus an upstream URL for every tenant (`PROXIE_UPSTREAM_URL` as the default).
 Local development only needs Docker and [Task](https://taskfile.dev). Copy
 `.env.example` to `.env`, then `task run` starts proxie and Redis with Docker
 Compose on port 8080 in the background (`task down` stops them). Point an
-SDK at `http://localhost:8080/upstream/v1`; everything after that prefix is
+SDK at `http://localhost:8080/v1/upstream`; everything after that prefix is
 forwarded to the tenant's upstream. `task test` and `task lint` run
 in containers too.
 

@@ -25,7 +25,7 @@ func TestEveryMethodIsProxied(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			newServerWithUpstream(t, slog.New(slog.DiscardHandler), upstream, defaultTimeout, defaultMaxRequestBytes).
-				ServeHTTP(w, newRequest(t, method, "/upstream/v1/v1/x"))
+				ServeHTTP(w, newRequest(t, method, "/v1/upstream/v1/x"))
 
 			assert.Equal(t, http.StatusOK, w.Code)
 			mu.Lock()

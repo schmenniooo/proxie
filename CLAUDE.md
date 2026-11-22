@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown, the Redis cache (`internal/cache`), proxie key auth (`internal/auth`, enforced on every route by `requireProxieKey`), the Kong CLI (`serve`, `doctor`, `config`, `version`) and the proxy core (`internal/proxy`, everything under `/upstream/v1/` is forwarded to the tenant's upstream) exist.
+proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown, the Redis cache (`internal/cache`), proxie key auth (`internal/auth`, enforced on every route by `requireProxieKey`), the Kong CLI (`serve`, `doctor`, `config`, `version`) and the proxy core (`internal/proxy`, everything under `/v1/upstream/` is forwarded to the tenant's upstream) exist.
 
 ## Commands
 

@@ -21,7 +21,7 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 
 ## Request flow
 
-1. The caller sends a request under `/upstream/v1/` with a proxie key
+1. The caller sends a request under `/v1/upstream/` with a proxie key
    (`X-Proxie-Key`) and the
    provider key in the provider's normal header (`Authorization` or
    `x-api-key`).
@@ -35,11 +35,12 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 
 ## Proxying
 
-- Callers point their SDK base URL at `http://<proxie>/upstream/v1`.
+- Callers point their SDK base URL at `http://<proxie>/v1/upstream`.
   Everything after that prefix is forwarded, with the prefix removed: `POST
-  /upstream/v1/v1/messages` reaches `<upstream>/v1/messages`. The version in
-  the prefix leaves room for a v2, and other paths stay free for proxie's own
-  routes. Paths outside the prefix get `404` (after the key check).
+  /v1/upstream/v1/messages` reaches `<upstream>/v1/messages`. The version
+  comes first, so later routes of proxie's own API sit next to the proxy
+  under `/v1` (and a `/v2` can follow). Paths outside the prefix get `404`
+  (after the key check).
 - Upstream URLs are base URLs (for example `https://api.anthropic.com`, not an
   endpoint like `.../v1/messages`). The request path is appended to the base
   path with a single `/` between them. The query is the upstream URL's query
@@ -201,8 +202,8 @@ tenant, and keys on a command line would show up in the process list.
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `PROXIE_API_KEY_<TENANT>` | Proxie key(s) of a tenant | at least one required |
-| `PROXIE_UPSTREAM_URL_<TENANT>` | Base URL the tenant's requests are forwarded to (`http`/`https`) | `PROXIE_UPSTREAM_URL` |
-| `PROXIE_UPSTREAM_URL` | Default upstream URL for tenants without their own | required unless every tenant has one |
+| `PROXIE_UPSTREAM_URL_<TENANT>` | Base URL the tenant's requests are forwarded to (`http`/`https`), for example `https://api.anthropic.com`, not an endpoint like `.../v1/messages`: the request path is appended | `PROXIE_UPSTREAM_URL` |
+| `PROXIE_UPSTREAM_URL` | Default upstream base URL for tenants without their own (same form) | required unless every tenant has one |
 | `PROXIE_REDIS_URL` | Redis URL (`rediss://` for TLS) | required |
 | `PROXIE_REDIS_PASSWORD` | Redis password | empty |
 | `PROXIE_CACHE_TTL` | Entry lifetime | `1h` |
