@@ -21,7 +21,8 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 
 ## Request flow
 
-1. The caller sends a request with a proxie key (`X-Proxie-Key`) and the
+1. The caller sends a request under `/v1/upstream/` with a proxie key
+   (`X-Proxie-Key`) and the
    provider key in the provider's normal header (`Authorization` or
    `x-api-key`).
 2. proxie checks the proxie key and resolves the tenant and its upstream URL.
@@ -31,6 +32,52 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 4. Hit: the stored response is replayed.
 5. Miss: the request is forwarded to the tenant's upstream, the response is
    passed back and a copy is stored.
+
+## Proxying
+
+- The caller supplies the endpoint path, the operator only the host. Callers
+  point their SDK base URL at `http://<proxie>/v1/upstream`; the SDK appends
+  its endpoint as usual. proxie removes the `/v1/upstream` prefix and appends
+  the rest to the tenant's upstream base URL:
+
+  ```
+  SDK base URL       http://proxie:8080/v1/upstream
+  SDK request        POST http://proxie:8080/v1/upstream/v1/messages
+  tenant upstream    https://api.anthropic.com
+  forwarded to       POST https://api.anthropic.com/v1/messages
+  ```
+
+  The same tenant can call any endpoint of its provider (`/v1/messages`,
+  `/v1/models`, ...) without config changes. Paths outside the prefix get
+  `404` (after the key check). The version comes first, so later routes of
+  proxie's own API sit next to the proxy under `/v1` (and a `/v2` can follow).
+- Upstream URLs are therefore base URLs (for example
+  `https://api.anthropic.com`), not endpoints like `.../v1/messages`. A base
+  URL may carry a path prefix (for example `https://gateway.example/anthropic`
+  becomes `https://gateway.example/anthropic/v1/messages`). The caller's path
+  is appended with a single `/` between them. The query is the upstream URL's query
+  followed by the request's. The caller's percent-encoding is kept as sent
+  (`a%2Fb` stays encoded).
+- A path with a `.` or `..` segment (also with `;` parameters, like `..;`) or
+  a backslash gets `400` and is not forwarded, so it cannot step out of the
+  upstream base path.
+- Headers are forwarded unchanged except: hop-by-hop headers (`Connection` and
+  the headers it names, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`,
+  `Transfer-Encoding`, `Upgrade`) are dropped in both directions, `Host` is
+  the upstream host, and `Accept-Encoding` is `identity`. No
+  `X-Forwarded-For` is added: the provider does not need the caller's IP.
+- Redirects from the upstream are passed back, not followed. Each instance
+  keeps up to 100 idle connections per upstream host.
+- Request bodies up to `PROXIE_MAX_REQUEST_BYTES` are buffered (they feed the
+  cache key). Larger bodies are streamed through unchanged and never cached.
+- Errors: upstream timeout `504`, upstream unreachable `502`, both with a JSON
+  `error` field. A caller that hangs up before the upstream answers gets
+  nothing; the access log records `408`. If the upstream fails after the
+  status was sent, the caller's connection is cut, so a truncated body never
+  looks complete. Logs carry the tenant and path, never the upstream URL.
+- `PROXIE_UPSTREAM_TIMEOUT` covers the whole exchange, including reading the
+  response body. Until streaming (milestone 9) it also applies to streams, so
+  a stream longer than the timeout is cut.
 
 ## Tenancy and auth
 
@@ -167,8 +214,8 @@ tenant, and keys on a command line would show up in the process list.
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `PROXIE_API_KEY_<TENANT>` | Proxie key(s) of a tenant | at least one required |
-| `PROXIE_UPSTREAM_URL_<TENANT>` | Base URL the tenant's requests are forwarded to (`http`/`https`) | `PROXIE_UPSTREAM_URL` |
-| `PROXIE_UPSTREAM_URL` | Default upstream URL for tenants without their own | required unless every tenant has one |
+| `PROXIE_UPSTREAM_URL_<TENANT>` | Base URL the tenant's requests are forwarded to (`http`/`https`), for example `https://api.anthropic.com`, not an endpoint like `.../v1/messages`. The caller's path after `/v1/upstream` is appended (see [Proxying](#proxying)) | `PROXIE_UPSTREAM_URL` |
+| `PROXIE_UPSTREAM_URL` | Default upstream base URL for tenants without their own (same form) | required unless every tenant has one |
 | `PROXIE_REDIS_URL` | Redis URL (`rediss://` for TLS) | required |
 | `PROXIE_REDIS_PASSWORD` | Redis password | empty |
 | `PROXIE_CACHE_TTL` | Entry lifetime | `1h` |
@@ -203,7 +250,7 @@ share the code paths of the server, so they cannot drift from it.
 | Command | Purpose |
 | --- | --- |
 | `proxie serve` | The proxy. The default when no command is given, so `proxie --addr :9000` works too |
-| `proxie doctor` | Checks config, Redis (PING, latency, `maxmemory-policy`), each upstream (DNS, TLS, HTTP) and the log file. `pass`, `warn` or `fail` per check, table or `--json`, exit code 1 when a check fails |
+| `proxie doctor` | Checks config, Redis (PING, latency, `maxmemory-policy`), each upstream (DNS, TLS, HTTP) and the log file. The upstream request carries no provider key (proxie holds none), so 401/403 is the expected answer and is reported as "reachable, auth required"; it proves reachability, not that a key works. `pass`, `warn` or `fail` per check, table or `--json`, exit code 1 when a check fails |
 | `proxie config` | The resolved config with secrets masked (`Config.LogValue`), text or `--json` |
 | `proxie version` | Version and commit, set via ldflags at build time |
 
@@ -254,6 +301,12 @@ exactly one `_test.go` next to it.
 
 - Multi-stage Dockerfile. Docker Compose (`compose.yaml`) runs tests, lint and a
   local proxie with Redis, so development needs only Docker and Task.
+- Local settings live in two gitignored env files, each with a committed
+  example: `.env.proxie` (proxie's own settings, loaded into the proxie
+  container) and `.env.test` (values for `task request`, including a provider
+  key, loaded only by the curl test container). Keeping them apart means the
+  local proxie never holds a provider key, matching production, where callers
+  send their own. Both are excluded from the Docker build context.
 - GitHub Actions: tests on pull requests. On a version tag created from `main`
   the image is built and pushed to the GitHub container registry (ghcr.io).
 - Work happens on branches and pull requests.
@@ -269,7 +322,7 @@ milestone is done in the pull request that is linked or currently open.
 - [ ] 3. Keygen: canonicalization, key building, header allow-list, ignore list
 - [x] 4. Auth: key check and tenant lookup (loading of `PROXIE_API_KEY_<TENANT>`
   and `PROXIE_UPSTREAM_URL_<TENANT>` is done in config)
-- [ ] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
+- [x] 5. Proxy core: reverse proxy, non-streaming, timeouts, body limit
 - [ ] 6. Cache layer: hit/miss, TTL, `X-Proxie-Cache`, bypass, 2xx only
 - [ ] 7. Coalescing for non-streaming requests
 - [ ] 8. Metrics and health endpoints on the admin port

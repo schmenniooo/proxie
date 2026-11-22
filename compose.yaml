@@ -28,6 +28,17 @@ services:
     <<: *go-tool
     image: golangci/golangci-lint:v2.15.0
 
+  # Sends a test request to proxie from inside the compose network
+  # (task request), built from the TEST_* values in .env.test. Only this
+  # service loads .env.test, so the provider key never reaches proxie.
+  curl:
+    image: curlimages/curl:8.11.1
+    profiles: [tools]
+    env_file:
+      - path: .env.test
+        required: false
+    entrypoint: ["sh", "-c"]
+
   redis:
     image: redis:8.0-alpine
     # Same eviction setup production Redis needs (see docs/design.md).
@@ -47,11 +58,11 @@ services:
         COMMIT: ${PROXIE_COMMIT:-unknown}
     ports:
       - "${PROXIE_PORT:-8080}:8080"
+    # proxie's own settings only (see .env.proxie.example).
     env_file:
-      - path: .env
+      - path: .env.proxie
         required: false
     environment:
-      PROXIE_UPSTREAM_URL: ${PROXIE_UPSTREAM_URL:-https://api.anthropic.com}
       PROXIE_REDIS_URL: redis://redis:6379
       PROXIE_ADDR: ":8080"
     depends_on:

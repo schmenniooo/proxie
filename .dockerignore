@@ -4,3 +4,5 @@
 bin
 docs
 *.md
+# Local env files hold keys; the image never needs them.
+.env*

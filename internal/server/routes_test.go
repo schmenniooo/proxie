@@ -4,25 +4,46 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHelloRouteIsRegistered(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := newRequest(t, http.MethodGet, "/hello")
+func TestEveryMethodIsProxied(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			var (
+				mu   sync.Mutex
+				seen string
+			)
+			upstream := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				seen = r.Method + " " + r.URL.Path
+			})
+			w := httptest.NewRecorder()
 
-	newServer(t, slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
+			newServerWithUpstream(t, slog.New(slog.DiscardHandler), upstream, defaultTimeout, defaultMaxRequestBytes).
+				ServeHTTP(w, newRequest(t, method, "/v1/upstream/v1/x"))
 
-	assert.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, http.StatusOK, w.Code)
+			mu.Lock()
+			defer mu.Unlock()
+			assert.Equal(t, method+" /v1/x", seen)
+		})
+	}
 }
 
-func TestHelloRouteRejectsPost(t *testing.T) {
+func TestPathOutsidePrefixIsNotProxied(t *testing.T) {
+	called := false
+	upstream := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true })
 	w := httptest.NewRecorder()
-	req := newRequest(t, http.MethodPost, "/hello")
 
-	newServer(t, slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
+	newServerWithUpstream(t, slog.New(slog.DiscardHandler), upstream, defaultTimeout, defaultMaxRequestBytes).
+		ServeHTTP(w, newRequest(t, http.MethodPost, "/v1/messages"))
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.JSONEq(t, `{"error":"not found"}`, w.Body.String())
+	assert.False(t, called)
 }

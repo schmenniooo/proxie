@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown, the Redis cache (`internal/cache`), proxie key auth (`internal/auth`, enforced on every route by `requireProxieKey`), the Kong CLI (`serve`, `doctor`, `config`, `version`) and a hello world `GET /hello` exist.
+proxie is a standalone, provider-agnostic reverse proxy (Go + Gin) that caches LLM API responses in Redis. `docs/design.md` is the source of truth for all design decisions (cache key format, tenancy, streaming, coalescing, timeouts, env vars, milestones). Read it before building anything; most of it is not implemented yet. Currently config, logging, graceful shutdown, the Redis cache (`internal/cache`), proxie key auth (`internal/auth`, enforced on every route by `requireProxieKey`), the Kong CLI (`serve`, `doctor`, `config`, `version`) and the proxy core (`internal/proxy`, everything under `/v1/upstream/` is forwarded to the tenant's upstream) exist.
 
 ## Commands
 
@@ -13,15 +13,18 @@ Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go tool
 ```
 task                                          # list tasks
 task build                                    # proxie Docker image
-task cli -- doctor                            # any proxie command in the compose setup (proxie + Redis)
-task run                                      # proxie + Redis via compose, env from .env (copy .env.example)
+task run                                      # proxie + Redis via compose in the background, settings from .env.proxie
+task cli -- proxie doctor                     # any command inside the running proxie container (task run first)
+task request                                  # test request through the running proxie, from the TEST_* values in .env.test
 task down                                     # stop the compose containers
 task test                                     # go test ./...
-task test -- -run TestHello ./internal/server # single test
+task test -- -run TestProxyForwardsRequest ./internal/server # single test
 task lint                                     # golangci-lint (config: .golangci.yml)
 task fmt                                      # gofmt + goimports via golangci-lint
 task check                                    # lint, then test
 ```
+
+Local env files, both gitignored, each with a committed `*.example` that explains it: `.env.proxie` holds proxie's own settings and is loaded into the proxie container (never put provider keys there; proxie holds none). `.env.test` holds the `task request` values, including a provider key, and is loaded only by the curl test container.
 
 ## Conventions
 

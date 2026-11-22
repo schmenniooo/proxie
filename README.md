@@ -11,9 +11,20 @@ overridden by a flag; see the
 `PROXIE_REDIS_URL` and at least one `PROXIE_API_KEY_<TENANT>` are required,
 plus an upstream URL for every tenant (`PROXIE_UPSTREAM_URL` as the default).
 
-Local development only needs Docker and [Task](https://taskfile.dev). Copy
-`.env.example` to `.env`, then `task run` starts proxie and Redis with Docker
-Compose on port 8080 (`task down` stops them). `task test` and `task lint` run
+Local development only needs Docker and [Task](https://taskfile.dev). It uses
+two env files, each with a committed example that explains it:
+
+- `.env.proxie` (copy `.env.proxie.example`): proxie's own settings, loaded
+  into the proxie container. No provider keys: proxie never holds them.
+- `.env.test` (copy `.env.test.example`): the values for `task request`,
+  including a provider key. Only the curl test container loads it, so that key
+  never reaches the proxie container.
+
+Both are gitignored and kept out of the Docker build. `task run` starts proxie
+and Redis with Docker Compose on port 8080 in the background (`task down`
+stops them). Point an
+SDK at `http://localhost:8080/v1/upstream`; everything after that prefix is
+forwarded to the tenant's upstream. `task test` and `task lint` run
 in containers too.
 
 ## Commands
@@ -32,18 +43,27 @@ proxie version
 `doctor` checks the config, Redis (reachable, latency, `maxmemory-policy` is
 `allkeys-lru`), every upstream URL (DNS, TLS handshake, the base URL answers)
 and, when `PROXIE_LOG_FILE` is set, that the log file is writable. Each check
-ends in `pass`, `warn` or `fail`.
+ends in `pass`, `warn` or `fail`. proxie holds no provider keys, so the
+upstream request is unauthenticated: 401 or 403 is the expected answer and is
+shown as "reachable, auth required". It proves the upstream is reachable, not
+that a key works.
 
-For local development, run commands through Task only, for example
-`task cli -- doctor` or `task cli -- --help`. They run in the compose setup
-next to its Redis; no proxie binary is built on the host.
+For local development, run commands through Task only. Start the stack with
+`task run` first; `task cli -- <command>` then runs any command inside that
+running proxie container, with its env and next to its Redis, for example
+`task cli -- proxie doctor` or `task cli -- proxie --help`. The image is
+distroless, so `proxie` (on `PATH`) is the only executable (no shell).
+`task request` sends one test request through the running proxie, built only
+from the `TEST_*` values in `.env.test` (proxie key, provider key, endpoint,
+body). `serve` already runs via `task run`. No proxie binary is built on the
+host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is
 distroless (no shell), so run the commands directly:
 
 ```
-docker exec proxie /proxie doctor
-docker exec proxie /proxie config
+docker exec proxie proxie doctor
+docker exec proxie proxie config
 ```
 
 No command prints prompts, bodies or keys.

@@ -11,6 +11,11 @@ vars:
   COMMIT:
     sh: git rev-parse HEAD 2>/dev/null || echo unknown
 
+# proxie's local settings; also fills in compose.yaml (PROXIE_PORT). A missing
+# file is fine. .env.test is deliberately not loaded here: only the curl
+# container reads it (task request).
+dotenv: [".env.proxie"]
+
 env:
   # Build args of the proxie image (compose.yaml).
   PROXIE_VERSION: "{{.VERSION}}"
@@ -31,14 +36,35 @@ tasks:
   cli:
     # Development runs the CLI only in Docker, never as a host binary, so it
     # cannot be confused with an installed proxie.
-    desc: Run a proxie command in the compose setup (env from .env), e.g. task cli -- doctor
+    # Runs inside the container started by `task run`, so it shares its env
+    # and state instead of building and starting a fresh container each time.
+    # The image is distroless: proxie (on PATH) is the only executable, there
+    # is no shell.
+    desc: Run any command inside the running proxie container (start it with task run first), e.g. task cli -- proxie doctor
     cmds:
-      - COMPOSE_PROGRESS=quiet docker compose run --rm --build proxie {{.CLI_ARGS}}
+      - docker compose exec proxie {{.CLI_ARGS}}
 
   run:
-    desc: Run proxie and Redis (env vars from .env, copy .env.example)
+    desc: Run proxie and Redis in the background (settings from .env.proxie, copy .env.proxie.example)
     cmds:
-      - docker compose up --build proxie
+      - docker compose up --build -d proxie
+
+  request:
+    desc: >-
+      Send a test request through the running proxie (task run first), built
+      from the TEST_* values in .env.test (copy .env.test.example)
+    cmds:
+      - >-
+        COMPOSE_PROGRESS=quiet docker compose run --rm curl '
+        for v in TEST_PROXIE_KEY TEST_PROVIDER_KEY TEST_ENDPOINT TEST_BODY; do
+        eval "[ -n \"\$$v\" ]" || { echo "$v is not set in .env.test (see .env.test.example)" >&2; exit 1; };
+        done;
+        curl -sS -i -X POST "http://proxie:8080/v1/upstream$TEST_ENDPOINT"
+        -H "X-Proxie-Key: $TEST_PROXIE_KEY"
+        -H "x-api-key: $TEST_PROVIDER_KEY"
+        -H "anthropic-version: 2023-06-01"
+        -H "content-type: application/json"
+        --data "$TEST_BODY"; echo'
 
   down:
     desc: Stop and remove the proxie and Redis containers
@@ -46,7 +72,7 @@ tasks:
       - docker compose down
 
   test:
-    desc: Run all tests (pass a package or flags after --, e.g. task test -- -run TestHello ./internal/server)
+    desc: Run all tests (pass a package or flags after --, e.g. task test -- -run TestProxyForwardsRequest ./internal/server)
     cmds:
       - "{{.GO}} go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}"
 

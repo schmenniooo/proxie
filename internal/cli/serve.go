@@ -13,6 +13,7 @@ import (
 	"github.com/schmenniooo/proxie/internal/cache"
 	"github.com/schmenniooo/proxie/internal/config"
 	"github.com/schmenniooo/proxie/internal/logging"
+	"github.com/schmenniooo/proxie/internal/proxy"
 	"github.com/schmenniooo/proxie/internal/server"
 )
 
@@ -56,6 +57,8 @@ func (ServeCmd) Run(ctx context.Context, cfg *config.Config, stdout io.Writer) e
 		logger.Warn("redis unreachable, requests will not be cached until it is back", slog.Any("error", err))
 	}
 
+	fwd := proxy.New(proxy.Options{Timeout: cfg.UpstreamTimeout})
+
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		logger.Error("listen failed", slog.String("addr", cfg.Addr), slog.Any("error", err))
@@ -63,7 +66,7 @@ func (ServeCmd) Run(ctx context.Context, cfg *config.Config, stdout io.Writer) e
 	}
 	logger.Info("listening", slog.String("addr", ln.Addr().String()))
 
-	if err := server.Run(ctx, ln, server.New(logger, authenticator), logger, cfg.ShutdownTimeout); err != nil {
+	if err := server.Run(ctx, ln, server.New(logger, authenticator, fwd, cfg.MaxRequestBytes), logger, cfg.ShutdownTimeout); err != nil {
 		logger.Error("server stopped with error", slog.Any("error", err))
 		return exitCode(1)
 	}
