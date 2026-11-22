@@ -73,7 +73,7 @@ func newRequest(t *testing.T, method, target string) *http.Request {
 
 func TestUnknownRouteGetsUpstream404(t *testing.T) {
 	w := httptest.NewRecorder()
-	req := newRequest(t, http.MethodGet, "/nope")
+	req := newRequest(t, http.MethodGet, "/upstream/v1/nope")
 
 	newServer(t, slog.New(slog.DiscardHandler)).ServeHTTP(w, req)
 

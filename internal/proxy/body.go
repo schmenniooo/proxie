@@ -45,6 +45,9 @@ func ReadBody(r *http.Request, limit int64) (Body, error) {
 	return Body{Bytes: b}, nil
 }
 
+// readCloser joins a Reader and a Closer into an io.ReadCloser. An oversize
+// body is read from io.MultiReader (prefix + rest), which has no Close, but
+// the original body must still be closed to release the connection.
 type readCloser struct {
 	io.Reader
 	io.Closer

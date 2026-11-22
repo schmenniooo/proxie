@@ -5,16 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/schmenniooo/proxie/internal/proxy"
 )
 
 // Handlers are the starting point of business logic.
-
-// statusClientClosedRequest is nginx's non-standard status for a caller
-// that hung up before the response was ready.
-const statusClientClosedRequest = 499
 
 // proxyHandler forwards the request to the tenant's upstream and copies the
 // response back. Upstream failures become 502, upstream timeouts 504. Errors
@@ -24,6 +21,9 @@ func proxyHandler(logger *slog.Logger, fwd *proxy.Forwarder, maxRequestBytes int
 		ctx := c.Request.Context()
 		tenant, ok := TenantFrom(c)
 		if !ok {
+			// Unreachable from outside: requireProxieKey answers 401 for a
+			// missing or unknown key before this handler runs, so a missing
+			// tenant here is a wiring bug, not a bad request.
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "no tenant"})
 			return
 		}
@@ -34,7 +34,7 @@ func proxyHandler(logger *slog.Logger, fwd *proxy.Forwarder, maxRequestBytes int
 			return
 		}
 
-		resp, err := fwd.Forward(ctx, tenant, c.Request)
+		resp, err := fwd.Forward(ctx, tenant, withoutPrefix(c.Request))
 		if err != nil {
 			switch {
 			case errors.Is(err, proxy.ErrInvalidPath):
@@ -42,7 +42,7 @@ func proxyHandler(logger *slog.Logger, fwd *proxy.Forwarder, maxRequestBytes int
 			case ctx.Err() != nil:
 				// The caller is gone; nothing reaches them. The status
 				// only keeps the access log truthful (Gin would log 404).
-				c.AbortWithStatus(statusClientClosedRequest)
+				c.AbortWithStatus(http.StatusRequestTimeout)
 			case errors.Is(err, context.DeadlineExceeded):
 				logUpstreamError(c, logger, tenant.Name, err)
 				c.AbortWithStatusJSON(http.StatusGatewayTimeout, gin.H{"error": "upstream timeout"})
@@ -68,6 +68,25 @@ func proxyHandler(logger *slog.Logger, fwd *proxy.Forwarder, maxRequestBytes int
 		// body.
 		c.Writer.WriteHeaderNow()
 	}
+}
+
+// withoutPrefix returns a shallow copy of r whose path no longer starts
+// with upstreamPrefix. The caller's encoding (RawPath) is kept. r itself is
+// left alone, so the access log still shows the path the caller sent.
+func withoutPrefix(r *http.Request) *http.Request {
+	u := *r.URL
+	u.Path = strings.TrimPrefix(u.Path, upstreamPrefix)
+	u.RawPath = strings.TrimPrefix(u.RawPath, upstreamPrefix)
+	out := r.WithContext(r.Context())
+	out.URL = &u
+	return out
+}
+
+// notFoundHandler answers paths outside upstreamPrefix. Gin's built-in 404
+// is written after the middleware chain, so the access log would miss its
+// bytes.
+func notFoundHandler(c *gin.Context) {
+	c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 }
 
 func logUpstreamError(c *gin.Context, logger *slog.Logger, tenant string, err error) {

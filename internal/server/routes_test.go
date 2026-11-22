@@ -25,7 +25,7 @@ func TestEveryMethodIsProxied(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			newServerWithUpstream(t, slog.New(slog.DiscardHandler), upstream, defaultTimeout, defaultMaxRequestBytes).
-				ServeHTTP(w, newRequest(t, method, "/v1/x"))
+				ServeHTTP(w, newRequest(t, method, "/upstream/v1/v1/x"))
 
 			assert.Equal(t, http.StatusOK, w.Code)
 			mu.Lock()
@@ -33,4 +33,17 @@ func TestEveryMethodIsProxied(t *testing.T) {
 			assert.Equal(t, method+" /v1/x", seen)
 		})
 	}
+}
+
+func TestPathOutsidePrefixIsNotProxied(t *testing.T) {
+	called := false
+	upstream := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true })
+	w := httptest.NewRecorder()
+
+	newServerWithUpstream(t, slog.New(slog.DiscardHandler), upstream, defaultTimeout, defaultMaxRequestBytes).
+		ServeHTTP(w, newRequest(t, http.MethodPost, "/v1/messages"))
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.JSONEq(t, `{"error":"not found"}`, w.Body.String())
+	assert.False(t, called)
 }

@@ -157,6 +157,9 @@ func hideURL(err error) error {
 }
 
 // cancelOnClose releases the timeout context once the body is closed.
+// Forward returns before the body is read, so it cannot cancel the context
+// itself: that would abort the body read. Cancelling on Close lets the
+// timeout cover the whole exchange and still frees its timer right after.
 type cancelOnClose struct {
 	io.ReadCloser
 
