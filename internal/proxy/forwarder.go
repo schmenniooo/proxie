@@ -102,7 +102,10 @@ func (f *Forwarder) Forward(ctx context.Context, tenant config.Tenant, r *http.R
 }
 
 // upstreamURL joins the upstream base URL with the path and query of the
-// request. The caller's percent-encoding is kept as sent.
+// request: the operator configures only the base (for example
+// https://api.anthropic.com), the caller supplies the endpoint path (for
+// example /v1/messages), giving https://api.anthropic.com/v1/messages. The
+// caller's percent-encoding is kept as sent.
 func upstreamURL(base, req *url.URL) *url.URL {
 	u := *base
 	u.Path = strings.TrimSuffix(base.Path, "/") + req.Path

@@ -34,7 +34,10 @@ proxie version
 `doctor` checks the config, Redis (reachable, latency, `maxmemory-policy` is
 `allkeys-lru`), every upstream URL (DNS, TLS handshake, the base URL answers)
 and, when `PROXIE_LOG_FILE` is set, that the log file is writable. Each check
-ends in `pass`, `warn` or `fail`.
+ends in `pass`, `warn` or `fail`. proxie holds no provider keys, so the
+upstream request is unauthenticated: 401 or 403 is the expected answer and is
+shown as "reachable, auth required". It proves the upstream is reachable, not
+that a key works.
 
 For local development, run commands through Task only. Start the stack with
 `task run` first; `task cli -- doctor` or `task cli -- --help` then runs the

@@ -39,7 +39,7 @@ var tenantName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // Tenants are not flags: their env var names carry the tenant name, and keys
 // on a command line would be visible in the process list.
 type Config struct {
-	UpstreamURL   URL    `name:"upstream-url" env:"PROXIE_UPSTREAM_URL" placeholder:"URL" help:"Default upstream URL for tenants without their own PROXIE_UPSTREAM_URL_<TENANT>."`
+	UpstreamURL   URL    `name:"upstream-url" env:"PROXIE_UPSTREAM_URL" placeholder:"URL" help:"Default upstream base URL (for example https://api.anthropic.com) for tenants without their own PROXIE_UPSTREAM_URL_<TENANT>. The caller's path after /v1/upstream is appended to it."`
 	RedisURL      URL    `name:"redis-url" env:"PROXIE_REDIS_URL" placeholder:"URL" help:"Redis URL (rediss:// for TLS). Required."`
 	RedisPassword string `name:"redis-password" env:"PROXIE_REDIS_PASSWORD" placeholder:"PASSWORD" help:"Redis password. Prefer the env var, flags show up in the process list."`
 
@@ -83,8 +83,9 @@ type Tenant struct {
 	Name string
 	// Keys are the accepted proxie keys. Several allow key rotation.
 	Keys []string
-	// UpstreamURL is where the tenant's requests are forwarded: its own
-	// PROXIE_UPSTREAM_URL_<TENANT>, or the default upstream URL.
+	// UpstreamURL is the base URL the tenant's requests are forwarded to:
+	// its own PROXIE_UPSTREAM_URL_<TENANT>, or the default upstream URL. The
+	// caller's path after /v1/upstream is appended to it.
 	UpstreamURL *url.URL
 }
 
