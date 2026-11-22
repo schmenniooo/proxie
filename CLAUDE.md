@@ -14,7 +14,7 @@ Use [Task](https://taskfile.dev) (`Taskfile.yml`) instead of calling the Go tool
 task                                          # list tasks
 task build                                    # proxie Docker image
 task run                                      # proxie + Redis via compose in the background, env from .env (copy .env.example)
-task cli -- doctor                            # any proxie command inside the running proxie container (task run first)
+task cli -- /proxie doctor                    # any command inside the running proxie container (task run first)
 task down                                     # stop the compose containers
 task test                                     # go test ./...
 task test -- -run TestProxyForwardsRequest ./internal/server # single test

@@ -33,9 +33,11 @@ tasks:
     # cannot be confused with an installed proxie.
     # Runs inside the container started by `task run`, so it shares its env
     # and state instead of building and starting a fresh container each time.
-    desc: Run a proxie command inside the running proxie container (start it with task run first), e.g. task cli -- doctor
+    # The image is distroless: /proxie is the only executable, there is no
+    # shell.
+    desc: Run any command inside the running proxie container (start it with task run first), e.g. task cli -- /proxie doctor
     cmds:
-      - docker compose exec proxie /proxie {{.CLI_ARGS}}
+      - docker compose exec proxie {{.CLI_ARGS}}
 
   run:
     desc: Run proxie and Redis (env vars from .env, copy .env.example)

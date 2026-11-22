@@ -40,9 +40,11 @@ shown as "reachable, auth required". It proves the upstream is reachable, not
 that a key works.
 
 For local development, run commands through Task only. Start the stack with
-`task run` first; `task cli -- doctor` or `task cli -- --help` then runs the
-command inside that running proxie container, with its env and next to its
-Redis. No proxie binary is built on the host.
+`task run` first; `task cli -- <command>` then runs any command inside that
+running proxie container, with its env and next to its Redis, for example
+`task cli -- /proxie doctor` or `task cli -- /proxie --help`. The image is
+distroless, so `/proxie` is the only executable (no shell). `serve` already
+runs via `task run`. No proxie binary is built on the host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is
 distroless (no shell), so run the commands directly:
