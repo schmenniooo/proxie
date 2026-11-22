@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -93,6 +94,27 @@ func TestRunAllPassOrWarn(t *testing.T) {
 	assert.Len(t, results, 5)
 	assert.Equal(t, doctor.Pass, got["upstream "+upstream.URL].Status)
 	assert.Contains(t, got["upstream "+upstream.URL].Detail, "HTTP 404")
+}
+
+func TestRunUpstreamAuthRequiredIsExpected(t *testing.T) {
+	t.Parallel()
+
+	mr := miniredis.RunT(t)
+	status := func(code int) *httptest.Server {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+	unauthorized, forbidden := status(http.StatusUnauthorized), status(http.StatusForbidden)
+	cfg := newConfig(t, mr.Addr(), unauthorized.URL, forbidden.URL)
+
+	got := byCheck(doctor.Run(t.Context(), cfg, nil))
+
+	for code, srv := range map[int]*httptest.Server{401: unauthorized, 403: forbidden} {
+		r := got["upstream "+srv.URL]
+		assert.Equal(t, doctor.Pass, r.Status, code)
+		assert.Contains(t, r.Detail, fmt.Sprintf("reachable, auth required (no provider key sent): HTTP %d in ", code))
+	}
 }
 
 func TestRunFailures(t *testing.T) {

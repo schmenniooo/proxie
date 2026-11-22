@@ -157,8 +157,10 @@ func upstreams(tenants map[string]config.Tenant) []*url.URL {
 }
 
 // checkUpstream resolves the upstream host, does a TLS handshake for https
-// and sends an unauthenticated GET to the base URL. Any HTTP response counts
-// as a pass: the base URL usually answers 401 or 404 without a key.
+// and sends an unauthenticated GET to the base URL. proxie holds no provider
+// keys (callers send their own), so the check proves the upstream is
+// reachable, not that a key works. Any HTTP response counts as a pass;
+// 401 and 403 are the expected answer and are reported as such.
 func checkUpstream(ctx context.Context, u *url.URL) Result {
 	r := Result{Check: "upstream " + config.RedactURL(u), Status: Pass}
 	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
@@ -206,6 +208,9 @@ func checkUpstream(ctx context.Context, u *url.URL) Result {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	_ = resp.Body.Close()
 	r.Detail = fmt.Sprintf("HTTP %d in %s", resp.StatusCode, roundDuration(time.Since(start)))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		r.Detail = "reachable, auth required (no provider key sent): " + r.Detail
+	}
 	return r
 }
 

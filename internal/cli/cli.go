@@ -29,7 +29,7 @@ type CLI struct {
 	config.Config `embed:""`
 
 	Serve      ServeCmd   `cmd:"" default:"withargs" help:"Run the proxy (the default when no command is given)."`
-	Doctor     DoctorCmd  `cmd:"" help:"Check the config and its dependencies: Redis, upstreams, log file."`
+	Doctor     DoctorCmd  `cmd:"" help:"Check the config and its dependencies: Redis, upstreams, log file. Upstreams are checked without a provider key, so 401 or 403 is the expected answer (reachable, auth required)."`
 	ShowConfig ConfigCmd  `cmd:"" name:"config" help:"Print the resolved config with secrets masked."`
 	Version    VersionCmd `cmd:"" help:"Print the version and commit."`
 }
