@@ -15,6 +15,7 @@ task                                          # list tasks
 task build                                    # proxie Docker image
 task run                                      # proxie + Redis via compose in the background, env from .env (copy .env.example)
 task cli -- proxie doctor                     # any command inside the running proxie container (task run first)
+task request                                  # test request through the running proxie (ANTHROPIC_API_KEY from the shell)
 task down                                     # stop the compose containers
 task test                                     # go test ./...
 task test -- -run TestProxyForwardsRequest ./internal/server # single test

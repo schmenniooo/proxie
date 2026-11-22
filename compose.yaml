@@ -28,6 +28,13 @@ services:
     <<: *go-tool
     image: golangci/golangci-lint:v2.15.0
 
+  # Sends test requests to proxie from inside the compose network
+  # (task request).
+  curl:
+    image: curlimages/curl:8.11.1
+    profiles: [tools]
+    entrypoint: ["sh", "-c"]
+
   redis:
     image: redis:8.0-alpine
     # Same eviction setup production Redis needs (see docs/design.md).

@@ -44,6 +44,44 @@ tasks:
     cmds:
       - docker compose up --build -d proxie
 
+  request:
+    # The provider key comes from the shell, never from .env: compose passes
+    # .env into the proxie container, and proxie holds no provider keys.
+    desc: >-
+      Send a test request through the running proxie (task run first). Uses the
+      first key of PROXIE_API_KEY_<TENANT> from .env (the first tenant unless
+      TENANT is set) and ANTHROPIC_API_KEY from your shell. Override TENANT,
+      ENDPOINT or BODY, e.g. task request TENANT=dev
+    vars:
+      ENDPOINT: '{{.ENDPOINT | default "/v1/messages"}}'
+      BODY: >-
+        {{.BODY | default `{"model":"claude-haiku-5-5","max_tokens":32,"messages":[{"role":"user","content":"Say hi in three words."}]}`}}
+      # First key of the tenant's PROXIE_API_KEY_<TENANT> line in .env
+      # (the first tenant in the file unless TENANT is set), quotes removed.
+      PROXIE_KEY:
+        sh: >-
+          grep -E '^PROXIE_API_KEY_{{if .TENANT}}{{upper .TENANT}}{{else}}[A-Za-z0-9_-]+{{end}}=' .env 2>/dev/null
+          | head -1 | cut -d= -f2- | tr -d "\"'" | cut -d, -f1
+    env:
+      PROXIE_KEY: "{{.PROXIE_KEY}}"
+      REQUEST_URL: "http://proxie:8080/v1/upstream{{.ENDPOINT}}"
+      REQUEST_BODY: "{{.BODY}}"
+    preconditions:
+      - sh: test -n "{{.PROXIE_KEY}}"
+        msg: "No PROXIE_API_KEY_{{if .TENANT}}{{upper .TENANT}}{{else}}<TENANT>{{end}} in .env"
+      - sh: test -n "$ANTHROPIC_API_KEY"
+        msg: "Export ANTHROPIC_API_KEY in your shell (not in .env)"
+    cmds:
+      - >-
+        COMPOSE_PROGRESS=quiet docker compose run --rm
+        -e PROXIE_KEY -e ANTHROPIC_API_KEY -e REQUEST_URL -e REQUEST_BODY curl
+        'curl -sS -i -X POST "$REQUEST_URL"
+        -H "X-Proxie-Key: $PROXIE_KEY"
+        -H "x-api-key: $ANTHROPIC_API_KEY"
+        -H "anthropic-version: 2023-06-01"
+        -H "content-type: application/json"
+        --data "$REQUEST_BODY"; echo'
+
   down:
     desc: Stop and remove the proxie and Redis containers
     cmds:
