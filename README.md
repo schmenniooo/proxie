@@ -42,16 +42,16 @@ that a key works.
 For local development, run commands through Task only. Start the stack with
 `task run` first; `task cli -- <command>` then runs any command inside that
 running proxie container, with its env and next to its Redis, for example
-`task cli -- /proxie doctor` or `task cli -- /proxie --help`. The image is
-distroless, so `/proxie` is the only executable (no shell). `serve` already
+`task cli -- proxie doctor` or `task cli -- proxie --help`. The image is
+distroless, so `proxie` (on `PATH`) is the only executable (no shell). `serve` already
 runs via `task run`. No proxie binary is built on the host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is
 distroless (no shell), so run the commands directly:
 
 ```
-docker exec proxie /proxie doctor
-docker exec proxie /proxie config
+docker exec proxie proxie doctor
+docker exec proxie proxie config
 ```
 
 No command prints prompts, bodies or keys.

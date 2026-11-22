@@ -11,8 +11,10 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /proxie ./cmd/proxie
 
 FROM gcr.io/distroless/static:nonroot
-COPY --from=build /proxie /proxie
+# On PATH (distroless sets /usr/local/bin), so `proxie doctor` works in the
+# container.
+COPY --from=build /proxie /usr/local/bin/proxie
 EXPOSE 8080
 # The CLI is the entrypoint: `docker run <image> doctor` runs another command.
-ENTRYPOINT ["/proxie"]
+ENTRYPOINT ["/usr/local/bin/proxie"]
 CMD ["serve"]
