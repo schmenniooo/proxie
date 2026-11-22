@@ -21,7 +21,8 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 
 ## Request flow
 
-1. The caller sends a request with a proxie key (`X-Proxie-Key`) and the
+1. The caller sends a request under `/upstream/v1/` with a proxie key
+   (`X-Proxie-Key`) and the
    provider key in the provider's normal header (`Authorization` or
    `x-api-key`).
 2. proxie checks the proxie key and resolves the tenant and its upstream URL.
@@ -31,6 +32,39 @@ caller app ──▶ proxie ──▶ LLM provider (any, set per tenant by env v
 4. Hit: the stored response is replayed.
 5. Miss: the request is forwarded to the tenant's upstream, the response is
    passed back and a copy is stored.
+
+## Proxying
+
+- Callers point their SDK base URL at `http://<proxie>/upstream/v1`.
+  Everything after that prefix is forwarded, with the prefix removed: `POST
+  /upstream/v1/v1/messages` reaches `<upstream>/v1/messages`. The version in
+  the prefix leaves room for a v2, and other paths stay free for proxie's own
+  routes. Paths outside the prefix get `404` (after the key check).
+- Upstream URLs are base URLs (for example `https://api.anthropic.com`, not an
+  endpoint like `.../v1/messages`). The request path is appended to the base
+  path with a single `/` between them. The query is the upstream URL's query
+  followed by the request's. The caller's percent-encoding is kept as sent
+  (`a%2Fb` stays encoded).
+- A path with a `.` or `..` segment (also with `;` parameters, like `..;`) or
+  a backslash gets `400` and is not forwarded, so it cannot step out of the
+  upstream base path.
+- Headers are forwarded unchanged except: hop-by-hop headers (`Connection` and
+  the headers it names, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`,
+  `Transfer-Encoding`, `Upgrade`) are dropped in both directions, `Host` is
+  the upstream host, and `Accept-Encoding` is `identity`. No
+  `X-Forwarded-For` is added: the provider does not need the caller's IP.
+- Redirects from the upstream are passed back, not followed. Each instance
+  keeps up to 100 idle connections per upstream host.
+- Request bodies up to `PROXIE_MAX_REQUEST_BYTES` are buffered (they feed the
+  cache key). Larger bodies are streamed through unchanged and never cached.
+- Errors: upstream timeout `504`, upstream unreachable `502`, both with a JSON
+  `error` field. A caller that hangs up before the upstream answers gets
+  nothing; the access log records `408`. If the upstream fails after the
+  status was sent, the caller's connection is cut, so a truncated body never
+  looks complete. Logs carry the tenant and path, never the upstream URL.
+- `PROXIE_UPSTREAM_TIMEOUT` covers the whole exchange, including reading the
+  response body. Until streaming (milestone 9) it also applies to streams, so
+  a stream longer than the timeout is cut.
 
 ## Tenancy and auth
 

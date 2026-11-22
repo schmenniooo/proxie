@@ -13,7 +13,9 @@ plus an upstream URL for every tenant (`PROXIE_UPSTREAM_URL` as the default).
 
 Local development only needs Docker and [Task](https://taskfile.dev). Copy
 `.env.example` to `.env`, then `task run` starts proxie and Redis with Docker
-Compose on port 8080 (`task down` stops them). `task test` and `task lint` run
+Compose on port 8080 in the background (`task down` stops them). Point an
+SDK at `http://localhost:8080/upstream/v1`; everything after that prefix is
+forwarded to the tenant's upstream. `task test` and `task lint` run
 in containers too.
 
 ## Commands
@@ -34,9 +36,10 @@ proxie version
 and, when `PROXIE_LOG_FILE` is set, that the log file is writable. Each check
 ends in `pass`, `warn` or `fail`.
 
-For local development, run commands through Task only, for example
-`task cli -- doctor` or `task cli -- --help`. They run in the compose setup
-next to its Redis; no proxie binary is built on the host.
+For local development, run commands through Task only. Start the stack with
+`task run` first; `task cli -- doctor` or `task cli -- --help` then runs the
+command inside that running proxie container, with its env and next to its
+Redis. No proxie binary is built on the host.
 
 The image's entrypoint is the CLI and its default command is `serve`. It is
 distroless (no shell), so run the commands directly:

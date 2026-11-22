@@ -31,14 +31,16 @@ tasks:
   cli:
     # Development runs the CLI only in Docker, never as a host binary, so it
     # cannot be confused with an installed proxie.
-    desc: Run a proxie command in the compose setup (env from .env), e.g. task cli -- doctor
+    # Runs inside the container started by `task run`, so it shares its env
+    # and state instead of building and starting a fresh container each time.
+    desc: Run a proxie command inside the running proxie container (start it with task run first), e.g. task cli -- doctor
     cmds:
-      - COMPOSE_PROGRESS=quiet docker compose run --rm --build proxie {{.CLI_ARGS}}
+      - docker compose exec proxie /proxie {{.CLI_ARGS}}
 
   run:
     desc: Run proxie and Redis (env vars from .env, copy .env.example)
     cmds:
-      - docker compose up --build proxie
+      - docker compose up --build -d proxie
 
   down:
     desc: Stop and remove the proxie and Redis containers

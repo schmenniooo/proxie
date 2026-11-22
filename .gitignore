@@ -35,3 +35,6 @@ go.work.sum
 # build output
 /bin/
 .task/
+
+# Local log files from manual runs
+*.log
