@@ -209,7 +209,7 @@ func checkUpstream(ctx context.Context, u *url.URL) Result {
 	_ = resp.Body.Close()
 	r.Detail = fmt.Sprintf("HTTP %d in %s", resp.StatusCode, roundDuration(time.Since(start)))
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		r.Detail = "reachable, auth required (no provider key sent): " + r.Detail
+		r.Detail = "reachable, auth required: " + r.Detail
 	}
 	return r
 }

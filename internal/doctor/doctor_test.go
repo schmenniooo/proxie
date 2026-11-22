@@ -113,7 +113,7 @@ func TestRunUpstreamAuthRequiredIsExpected(t *testing.T) {
 	for code, srv := range map[int]*httptest.Server{401: unauthorized, 403: forbidden} {
 		r := got["upstream "+srv.URL]
 		assert.Equal(t, doctor.Pass, r.Status, code)
-		assert.Contains(t, r.Detail, fmt.Sprintf("reachable, auth required (no provider key sent): HTTP %d in ", code))
+		assert.Contains(t, r.Detail, fmt.Sprintf("reachable, auth required: HTTP %d in ", code))
 	}
 }
 
